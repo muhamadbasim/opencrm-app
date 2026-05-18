@@ -1,0 +1,261 @@
+#!/usr/bin/env python3
+"""
+Task 6.2 — Recreate frontend critical files from FRONTEND-SOURCE-MANIFEST.json.
+
+Iterates ALL 208 entries of FRONTEND-SOURCE-MANIFEST.json. For each entry,
+extracts the canonical content from the corresponding `frontend/reference/files/*.md`
+(content is wrapped in a fenced code block with 3+ backticks), writes it under
+$OPENCRM_APP, then verifies the file SHA-256 matches the manifest entry.
+
+Mode:
+  (default)   : extract + compute SHAs but do not write (dry-run)
+  --write     : write files whose current bytes differ from expected; verify post-write SHAs
+
+Exit codes:
+  0  success (all entries match expected SHA after write, or dry-run completed cleanly)
+  2  extraction phase failed (reference .md broken or SHA mismatch vs manifest)
+  3  guardrail rejected a write target (path outside $OPENCRM_APP)
+  4  post-write SHA verification failed
+"""
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+
+OPENCRM_APP = '/home/ubuntu/.openclaw/workspace/opencrm-app'
+SKILL = '/home/ubuntu/.openclaw/workspace/skills/opencrm-builder-class/opencrm-builder-class'
+
+FRONTEND_MANIFEST = SKILL + '/frontend/reference/FRONTEND-SOURCE-MANIFEST.json'
+FRONTEND_BASE = SKILL  # manifest entries store reference paths relative to the skill root
+
+# Files already covered + verified by Task 6.1 (frontend apps config files).
+# Per task 6.2 description: "Skip files already covered by Task 6.1
+# (apps/frontend/{package.json, tsconfig.json, vite.config.ts, components.json, Dockerfile})".
+# These are still verified in PHASE 6 (post-write SHA), so the parity guarantee holds for
+# the entire 208-entry manifest, but they are not rewritten.
+TASK61_COVERED = {
+    'apps/frontend/package.json',
+    'apps/frontend/tsconfig.json',
+    'apps/frontend/vite.config.ts',
+    'apps/frontend/components.json',
+    'apps/frontend/Dockerfile',
+}
+
+
+def extract_canonical(md_bytes: bytes) -> bytes:
+    """Return the bytes inside the first fenced code block of a reference .md.
+
+    Supports any opening fence with >= 3 backticks; matching closing fence
+    must be exactly the same backtick run alone on its line.
+    """
+    text = md_bytes.decode('utf-8')
+    lines = text.split('\n')
+    open_idx = None
+    fence_str = None
+    for i, line in enumerate(lines):
+        m = re.match(r'^(`{3,})', line)
+        if m:
+            open_idx = i
+            fence_str = m.group(1)
+            break
+    if open_idx is None:
+        raise ValueError('no opening fence found')
+    close_idx = None
+    for j in range(open_idx + 1, len(lines)):
+        if lines[j] == fence_str:
+            close_idx = j
+            break
+    if close_idx is None:
+        raise ValueError('no closing fence found')
+    inner = lines[open_idx + 1:close_idx]
+    return ('\n'.join(inner)).encode('utf-8')
+
+
+def sha256_bytes(b: bytes) -> str:
+    return hashlib.sha256(b).hexdigest()
+
+
+def sha256_file(path: str) -> str:
+    return hashlib.sha256(open(path, 'rb').read()).hexdigest()
+
+
+def check_write_path(path: str) -> bool:
+    """Use $OPENCRM_APP/scripts/spec/check-write-path.sh to confirm path is allowed."""
+    helper = OPENCRM_APP + '/scripts/spec/check-write-path.sh'
+    res = subprocess.run([helper, path], capture_output=True, text=True)
+    if res.returncode != 0:
+        sys.stderr.write(res.stderr)
+    return res.returncode == 0
+
+
+def build_entries():
+    """Return list of dicts: {target, ref, expected_sha, expected_bytes, group, task61}."""
+    m = json.load(open(FRONTEND_MANIFEST))
+    entries = []
+    for f in m['files']:
+        target = f['path']
+        ref = FRONTEND_BASE + '/' + f['reference']
+        entries.append({
+            'target': target,
+            'ref': ref,
+            'expected_sha': f['sha256'],
+            'expected_bytes': f['bytes'],
+            'group': f['group'],
+            'task61': target in TASK61_COVERED,
+        })
+    if len(entries) != m.get('total_files'):
+        raise RuntimeError(
+            f"manifest count drift: {len(entries)} entries vs total_files={m.get('total_files')}"
+        )
+    return entries
+
+
+def main(argv):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--write', action='store_true', help='actually write files')
+    parser.add_argument('--verbose', action='store_true')
+    args = parser.parse_args(argv)
+
+    entries = build_entries()
+    print(f'Total entries: {len(entries)}')
+    grp_counts = {}
+    for e in entries:
+        grp_counts[e['group']] = grp_counts.get(e['group'], 0) + 1
+    for g in sorted(grp_counts):
+        print(f'  {g:30s} : {grp_counts[g]}')
+    print(f'  task61-covered (skipped from rewrite, still verified): {sum(1 for e in entries if e["task61"])}')
+
+    print('\n=== PHASE 1: Extract + verify against manifest SHA ===')
+    extract_failures = []
+    for e in entries:
+        if not os.path.isfile(e['ref']):
+            extract_failures.append((e['target'], 'reference missing: ' + e['ref']))
+            continue
+        try:
+            content = extract_canonical(open(e['ref'], 'rb').read())
+        except Exception as ex:
+            extract_failures.append((e['target'], f'extract error: {ex}'))
+            continue
+        actual_sha = sha256_bytes(content)
+        if actual_sha != e['expected_sha'] or len(content) != e['expected_bytes']:
+            extract_failures.append((
+                e['target'],
+                f"extracted SHA/bytes mismatch manifest: "
+                f"got {actual_sha[:16]}..({len(content)}B) "
+                f"expected {e['expected_sha'][:16]}..({e['expected_bytes']}B)"
+            ))
+        else:
+            e['extracted'] = content
+    if extract_failures:
+        print(f'\nEXTRACTION FAILURES ({len(extract_failures)}):')
+        for t, msg in extract_failures:
+            print(f'  {t}: {msg}')
+        print('\nABORT: extraction phase failed; refusing to write.')
+        return 2
+    print(f'  OK: all {len(entries)} extractions match manifest SHA')
+
+    print('\n=== PHASE 2: Classify current state ===')
+    same = []
+    diff = []
+    missing = []
+    skipped_61 = []
+    for e in entries:
+        target_path = os.path.join(OPENCRM_APP, e['target'])
+        if e['task61']:
+            # Verify only; do not classify as a rewrite candidate.
+            if not os.path.isfile(target_path):
+                # Even if Task 6.1 was supposed to cover it, fall through to creation.
+                missing.append(e)
+                continue
+            cur_sha = sha256_file(target_path)
+            if cur_sha == e['expected_sha']:
+                skipped_61.append(e)
+            else:
+                # Drift detected on a Task 6.1 file — flag as diff so it gets rewritten.
+                diff.append((e, cur_sha))
+            continue
+        if not os.path.isfile(target_path):
+            missing.append(e)
+            continue
+        cur_sha = sha256_file(target_path)
+        if cur_sha == e['expected_sha']:
+            same.append(e)
+        else:
+            diff.append((e, cur_sha))
+    print(f'  match (no-op):                 {len(same)}')
+    print(f'  task61-covered (verified-only): {len(skipped_61)}')
+    print(f'  diff (will rewrite):           {len(diff)}')
+    if args.verbose or len(diff) <= 30:
+        for e, cs in diff:
+            print(f'    {e["target"]} cur={cs[:16]}.. exp={e["expected_sha"][:16]}..')
+    print(f'  missing (will create):         {len(missing)}')
+    if args.verbose or len(missing) <= 30:
+        for e in missing:
+            print(f'    {e["target"]}')
+
+    if not args.write:
+        print('\n[dry-run] not writing.')
+        return 0
+
+    print('\n=== PHASE 3: Guardrail check (check-write-path.sh) ===')
+    targets_to_write = [os.path.join(OPENCRM_APP, e['target']) for e, _ in diff] + \
+                       [os.path.join(OPENCRM_APP, e['target']) for e in missing]
+    # Spot-check guardrail in batches (single helper invocation per path keeps
+    # diagnostics readable on first violation).
+    for tp in targets_to_write:
+        if not check_write_path(tp):
+            print(f'  REJECT: {tp}')
+            return 3
+    print(f'  OK: all {len(targets_to_write)} write targets pass guardrail')
+
+    print('\n=== PHASE 4: Write ===')
+    written = []
+    for e, _ in diff:
+        target_path = os.path.join(OPENCRM_APP, e['target'])
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        with open(target_path, 'wb') as fh:
+            fh.write(e['extracted'])
+        written.append(e['target'])
+        if args.verbose:
+            print(f'  wrote {e["target"]}')
+    for e in missing:
+        target_path = os.path.join(OPENCRM_APP, e['target'])
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        with open(target_path, 'wb') as fh:
+            fh.write(e['extracted'])
+        written.append(e['target'])
+        if args.verbose:
+            print(f'  created {e["target"]}')
+    print(f'  total written: {len(written)} (drift-rewrites={len(diff)}, missing-created={len(missing)})')
+
+    print('\n=== PHASE 5: Post-write SHA verification (all 208 entries) ===')
+    pass_count = 0
+    fail_list = []
+    for e in entries:
+        target_path = os.path.join(OPENCRM_APP, e['target'])
+        if not os.path.isfile(target_path):
+            fail_list.append((e['target'], 'FILE MISSING'))
+            continue
+        cur = sha256_file(target_path)
+        if cur == e['expected_sha']:
+            pass_count += 1
+        else:
+            fail_list.append(
+                (e['target'], f'SHA mismatch cur={cur[:16]}.. exp={e["expected_sha"][:16]}..')
+            )
+    print(f'  match: {pass_count}/{len(entries)}')
+    if fail_list:
+        print(f'  MISMATCH ({len(fail_list)}):')
+        for t, msg in fail_list:
+            print(f'    {t}: {msg}')
+        return 4
+    print('  OK: all 208 entries match expected SHA after write')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

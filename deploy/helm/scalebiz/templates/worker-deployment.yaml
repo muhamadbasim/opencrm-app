@@ -1,0 +1,61 @@
+{{- if .Values.worker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scalebiz.fullname" . }}-worker
+  labels:
+    {{- include "scalebiz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  minReadySeconds: {{ .Values.worker.minReadySeconds }}
+  progressDeadlineSeconds: {{ .Values.worker.progressDeadlineSeconds }}
+  revisionHistoryLimit: {{ .Values.worker.revisionHistoryLimit }}
+  strategy:
+    type: {{ .Values.worker.updateStrategy.type }}
+    {{- if and (eq .Values.worker.updateStrategy.type "RollingUpdate") .Values.worker.updateStrategy.rollingUpdate }}
+    rollingUpdate:
+      maxUnavailable: {{ .Values.worker.updateStrategy.rollingUpdate.maxUnavailable }}
+      maxSurge: {{ .Values.worker.updateStrategy.rollingUpdate.maxSurge }}
+    {{- end }}
+  selector:
+    matchLabels:
+      {{- include "scalebiz.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      {{- with .Values.global.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "scalebiz.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+        {{- with .Values.global.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.worker.terminationGracePeriodSeconds }}
+      {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: worker
+          image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.tag }}"
+          imagePullPolicy: {{ .Values.worker.image.pullPolicy }}
+          env:
+            - name: APP_MODE
+              value: worker
+            {{- range $key, $value := .Values.worker.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "scalebiz.fullname" . }}-env
+            - secretRef:
+                name: {{ .Values.global.secretName }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+{{- end }}

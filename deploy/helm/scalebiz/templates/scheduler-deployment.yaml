@@ -1,0 +1,61 @@
+{{- if .Values.scheduler.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scalebiz.fullname" . }}-scheduler
+  labels:
+    {{- include "scalebiz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scheduler
+spec:
+  replicas: {{ .Values.scheduler.replicaCount }}
+  minReadySeconds: {{ .Values.scheduler.minReadySeconds }}
+  progressDeadlineSeconds: {{ .Values.scheduler.progressDeadlineSeconds }}
+  revisionHistoryLimit: {{ .Values.scheduler.revisionHistoryLimit }}
+  strategy:
+    type: {{ .Values.scheduler.updateStrategy.type }}
+    {{- if and (eq .Values.scheduler.updateStrategy.type "RollingUpdate") .Values.scheduler.updateStrategy.rollingUpdate }}
+    rollingUpdate:
+      maxUnavailable: {{ .Values.scheduler.updateStrategy.rollingUpdate.maxUnavailable }}
+      maxSurge: {{ .Values.scheduler.updateStrategy.rollingUpdate.maxSurge }}
+    {{- end }}
+  selector:
+    matchLabels:
+      {{- include "scalebiz.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scheduler
+  template:
+    metadata:
+      {{- with .Values.global.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "scalebiz.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: scheduler
+        {{- with .Values.global.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.scheduler.terminationGracePeriodSeconds }}
+      {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: scheduler
+          image: "{{ .Values.scheduler.image.repository }}:{{ .Values.scheduler.image.tag }}"
+          imagePullPolicy: {{ .Values.scheduler.image.pullPolicy }}
+          env:
+            - name: APP_MODE
+              value: scheduler
+            {{- range $key, $value := .Values.scheduler.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "scalebiz.fullname" . }}-env
+            - secretRef:
+                name: {{ .Values.global.secretName }}
+          resources:
+            {{- toYaml .Values.scheduler.resources | nindent 12 }}
+{{- end }}

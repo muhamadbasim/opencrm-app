@@ -1,0 +1,30 @@
+global:
+  env:
+    NODE_ENV: development
+    FRONTEND_URL: https://local-fe.scalebiz.chat
+    SOCKET_IO_CORS_ORIGIN: https://local-fe.scalebiz.chat,http://localhost:3005
+    XENDIT_RECONCILIATION_ENABLED: "false"
+
+ingress:
+  appHost: local-fe.scalebiz.chat
+  apiHost: local-api.scalebiz.chat
+  tls:
+    enabled: false
+
+frontend:
+  replicaCount: 1
+
+api:
+  replicaCount: 2
+
+worker:
+  replicaCount: 1
+
+scheduler:
+  replicaCount: 1
+
+hpa:
+  api:
+    enabled: false
+  worker:
+    enabled: false

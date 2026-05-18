@@ -1,0 +1,78 @@
+{{- if .Values.frontend.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scalebiz.fullname" . }}-frontend
+  labels:
+    {{- include "scalebiz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  minReadySeconds: {{ .Values.frontend.minReadySeconds }}
+  progressDeadlineSeconds: {{ .Values.frontend.progressDeadlineSeconds }}
+  revisionHistoryLimit: {{ .Values.frontend.revisionHistoryLimit }}
+  strategy:
+    type: {{ .Values.frontend.updateStrategy.type }}
+    {{- if and (eq .Values.frontend.updateStrategy.type "RollingUpdate") .Values.frontend.updateStrategy.rollingUpdate }}
+    rollingUpdate:
+      maxUnavailable: {{ .Values.frontend.updateStrategy.rollingUpdate.maxUnavailable }}
+      maxSurge: {{ .Values.frontend.updateStrategy.rollingUpdate.maxSurge }}
+    {{- end }}
+  selector:
+    matchLabels:
+      {{- include "scalebiz.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      {{- with .Values.global.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "scalebiz.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: frontend
+        {{- with .Values.global.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.frontend.terminationGracePeriodSeconds }}
+      {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: frontend
+          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+          env:
+            {{- range $key, $value := .Values.frontend.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- if gt (int .Values.frontend.lifecycle.preStopSeconds) 0 }}
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - sleep {{ .Values.frontend.lifecycle.preStopSeconds }}
+          {{- end }}
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+{{- end }}

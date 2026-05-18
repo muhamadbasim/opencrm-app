@@ -1,0 +1,21 @@
+{{- if .Values.api.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "scalebiz.fullname" . }}-api
+  labels:
+    {{- include "scalebiz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  type: {{ .Values.api.service.type }}
+  selector:
+    {{- include "scalebiz.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: {{ .Values.api.service.port }}
+      targetPort: http
+    - name: socket
+      port: {{ .Values.api.service.socketPort }}
+      targetPort: socket
+{{- end }}

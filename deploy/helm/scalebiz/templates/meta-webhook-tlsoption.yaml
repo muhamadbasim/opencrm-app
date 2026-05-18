@@ -1,0 +1,13 @@
+{{- if .Values.webhookMtls.enabled }}
+apiVersion: {{ .Values.webhookMtls.traefik.apiVersion }}
+kind: TLSOption
+metadata:
+  name: {{ .Values.webhookMtls.traefik.tlsOptionName }}
+  labels:
+    {{- include "scalebiz.labels" . | nindent 4 }}
+spec:
+  clientAuth:
+    secretNames:
+      - {{ .Values.webhookMtls.traefik.caSecretName }}
+    clientAuthType: {{ .Values.webhookMtls.traefik.clientAuthType }}
+{{- end }}

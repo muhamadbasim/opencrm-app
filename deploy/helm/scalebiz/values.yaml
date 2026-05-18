@@ -1,0 +1,175 @@
+global:
+  imagePullSecrets: []
+  secretName: scalebiz-secrets
+  podAnnotations: {}
+  podLabels: {}
+  env:
+    NODE_ENV: production
+    PORT: "3010"
+    SOCKET_PORT: "3011"
+    SOCKET_IO_PATH: /socket.io
+    SOCKET_IO_TRANSPORTS: websocket
+    FRONTEND_URL: https://app.scalebiz.chat
+    SOCKET_IO_CORS_ORIGIN: https://app.scalebiz.chat
+
+frontend:
+  enabled: true
+  replicaCount: 1
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 10
+  progressDeadlineSeconds: 600
+  revisionHistoryLimit: 10
+  terminationGracePeriodSeconds: 30
+  lifecycle:
+    preStopSeconds: 10
+  image:
+    repository: ghcr.io/REPLACE_ME/scalebiz-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+  extraEnv: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+api:
+  enabled: true
+  replicaCount: 2
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 15
+  progressDeadlineSeconds: 600
+  revisionHistoryLimit: 10
+  terminationGracePeriodSeconds: 45
+  lifecycle:
+    preStopSeconds: 15
+  image:
+    repository: ghcr.io/REPLACE_ME/scalebiz-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3010
+    socketPort: 3011
+  extraEnv: {}
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+worker:
+  enabled: true
+  replicaCount: 1
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 10
+  progressDeadlineSeconds: 600
+  revisionHistoryLimit: 10
+  terminationGracePeriodSeconds: 30
+  image:
+    repository: ghcr.io/REPLACE_ME/scalebiz-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  extraEnv: {}
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+scheduler:
+  enabled: true
+  replicaCount: 1
+  updateStrategy:
+    type: Recreate
+  minReadySeconds: 10
+  progressDeadlineSeconds: 600
+  revisionHistoryLimit: 10
+  terminationGracePeriodSeconds: 30
+  image:
+    repository: ghcr.io/REPLACE_ME/scalebiz-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  extraEnv: {}
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+ingress:
+  enabled: true
+  className: traefik
+  annotations: {}
+  appHost: app.scalebiz.chat
+  apiHost: api.scalebiz.chat
+  tls:
+    enabled: false
+    secretName: scalebiz-tls
+
+# Optional Meta Webhooks mTLS support (Traefik).
+# Keep disabled by default to avoid forcing client certs on all routes.
+webhookMtls:
+  enabled: false
+  traefik:
+    apiVersion: traefik.io/v1alpha1
+    tlsOptionName: meta-webhooks-mtls
+    clientAuthType: VerifyClientCertIfGiven
+    caSecretName: meta-webhooks-ca
+
+# Optional dedicated ingress host for inbound provider webhooks.
+# Recommended if you want strict mTLS without impacting normal API traffic.
+webhookIngress:
+  enabled: false
+  className: traefik
+  annotations: {}
+  host: webhook-api.scalebiz.chat
+  paths:
+    - /api/v1/webhooks
+    - /api/webhooks
+  tls:
+    enabled: true
+    secretName: scalebiz-webhook-tls
+
+hpa:
+  api:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 75
+  worker:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 75
+
+pdb:
+  api:
+    enabled: true
+    minAvailable: 1
+  frontend:
+    enabled: true
+    minAvailable: 1

@@ -1,0 +1,134 @@
+name: Rollback Scalebiz (Docker Compose via SSH)
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Existing image tag to redeploy, for example the previous Git SHA
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  SSH_HOST: 43.156.163.46
+  SSH_USER: ubuntu
+  REMOTE_APP_DIR: /home/ubuntu/opencrm-app
+  COMPOSE_PROJECT: vps
+  APP_HOST: crm.scalebiz.chat
+  API_HOST: api-crm.scalebiz.chat
+  FRONTEND_ORIGIN: https://crm.scalebiz.chat
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: Dev
+    steps:
+      - name: Ensure SSH secret exists
+        run: |
+          test -n "${{ secrets.SSH_PRIVATE_KEY }}" || (echo "Missing secret SSH_PRIVATE_KEY" && exit 1)
+
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Trust SSH host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${SSH_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Redeploy existing image tag
+        run: |
+          ssh "${SSH_USER}@${SSH_HOST}" \
+            "IMAGE_TAG='${{ inputs.image_tag }}' REMOTE_APP_DIR='${REMOTE_APP_DIR}' COMPOSE_PROJECT='${COMPOSE_PROJECT}' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          docker image inspect "opencrm/backend:${IMAGE_TAG}" >/dev/null
+          docker image inspect "opencrm/frontend:${IMAGE_TAG}" >/dev/null
+
+          cd "${REMOTE_APP_DIR}/deploy/vps"
+          test -f ../../.env.production
+
+          IMAGE_TAG="${IMAGE_TAG}" docker compose --env-file ../../.env.production -p "${COMPOSE_PROJECT}" up -d --no-build --remove-orphans --force-recreate backend-api backend-worker backend-scheduler frontend
+
+          for i in $(seq 1 40); do
+            api_status="$(docker inspect --format '{{.State.Health.Status}}' opencrm-backend-api 2>/dev/null || true)"
+            frontend_status="$(docker inspect --format '{{.State.Health.Status}}' opencrm-frontend 2>/dev/null || true)"
+            echo "health[$i] api=${api_status:-unknown} frontend=${frontend_status:-unknown}"
+            if [ "${api_status}" = "healthy" ] && [ "${frontend_status}" = "healthy" ]; then
+              break
+            fi
+            sleep 3
+          done
+
+          test "$(docker inspect --format '{{.State.Health.Status}}' opencrm-backend-api)" = "healthy"
+          test "$(docker inspect --format '{{.State.Health.Status}}' opencrm-frontend)" = "healthy"
+          test "$(docker inspect --format '{{.Config.Image}}' opencrm-backend-api)" = "opencrm/backend:${IMAGE_TAG}"
+          test "$(docker inspect --format '{{.Config.Image}}' opencrm-backend-worker)" = "opencrm/backend:${IMAGE_TAG}"
+          test "$(docker inspect --format '{{.Config.Image}}' opencrm-backend-scheduler)" = "opencrm/backend:${IMAGE_TAG}"
+          test "$(docker inspect --format '{{.Config.Image}}' opencrm-frontend)" = "opencrm/frontend:${IMAGE_TAG}"
+          docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' | grep -E 'opencrm|NAMES'
+          REMOTE
+
+      - name: Post-rollback smoke checks
+        run: |
+          set -euo pipefail
+
+          curl -fsS --retry 5 --retry-delay 2 --retry-connrefused "https://${API_HOST}/health" >/dev/null
+          curl -fsSL --retry 5 --retry-delay 2 --retry-connrefused "https://${APP_HOST}/login" >/dev/null
+
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const https = require("node:https");
+
+          const host = process.env.API_HOST;
+          const origin = process.env.FRONTEND_ORIGIN;
+          const key = crypto.randomBytes(16).toString("base64");
+          const expectedAccept = crypto
+            .createHash("sha1")
+            .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+            .digest("base64");
+
+          const req = https.request({
+            host,
+            port: 443,
+            method: "GET",
+            path: "/socket.io/?EIO=4&transport=websocket",
+            headers: {
+              Connection: "Upgrade",
+              Upgrade: "websocket",
+              "Sec-WebSocket-Key": key,
+              "Sec-WebSocket-Version": "13",
+              Origin: origin,
+            },
+            timeout: 10000,
+          });
+
+          req.on("upgrade", (res, socket) => {
+            const accept = res.headers["sec-websocket-accept"];
+            if (res.statusCode !== 101 || accept !== expectedAccept) {
+              console.error(`Unexpected websocket handshake: status=${res.statusCode}, accept=${accept}`);
+              socket.destroy();
+              process.exit(1);
+            }
+            socket.destroy();
+            process.exit(0);
+          });
+
+          req.on("response", (res) => {
+            console.error(`Expected HTTP 101 upgrade, received ${res.statusCode}`);
+            process.exit(1);
+          });
+
+          req.on("timeout", () => {
+            req.destroy(new Error("websocket handshake timeout"));
+          });
+
+          req.on("error", (error) => {
+            console.error(`Websocket smoke check failed: ${error.message}`);
+            process.exit(1);
+          });
+
+          req.end();
+          NODE

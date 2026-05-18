@@ -1,0 +1,40 @@
+{{- if .Values.webhookIngress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "scalebiz.fullname" . }}-webhook
+  labels:
+    {{- include "scalebiz.labels" . | nindent 4 }}
+  {{- if or .Values.webhookIngress.annotations .Values.webhookMtls.enabled }}
+  annotations:
+    {{- if .Values.webhookIngress.annotations }}
+    {{- toYaml .Values.webhookIngress.annotations | nindent 4 }}
+    {{- end }}
+    {{- if .Values.webhookMtls.enabled }}
+    traefik.ingress.kubernetes.io/router.tls.options: {{ printf "%s-%s@kubernetescrd" .Release.Namespace .Values.webhookMtls.traefik.tlsOptionName | quote }}
+    {{- end }}
+  {{- end }}
+spec:
+  {{- if .Values.webhookIngress.className }}
+  ingressClassName: {{ .Values.webhookIngress.className }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.webhookIngress.host }}
+      http:
+        paths:
+          {{- range .Values.webhookIngress.paths }}
+          - path: {{ . }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "scalebiz.fullname" $ }}-api
+                port:
+                  name: http
+          {{- end }}
+  {{- if .Values.webhookIngress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.webhookIngress.host }}
+      secretName: {{ .Values.webhookIngress.tls.secretName }}
+  {{- end }}
+{{- end }}

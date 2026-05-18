@@ -1,0 +1,6 @@
+apiVersion: v2
+name: scalebiz
+description: Scalebiz multi-runtime deployment (frontend, api, worker, scheduler)
+type: application
+version: 0.1.0
+appVersion: "2.0.0"

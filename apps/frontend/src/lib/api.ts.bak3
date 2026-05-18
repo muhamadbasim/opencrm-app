@@ -1,0 +1,418 @@
+/**
+ * Frontend API Client
+ * 
+ * All API calls go through Express proxy
+ * Automatically includes auth token
+ */
+
+export const API_BASE = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api`
+  : 'http://localhost:3010/api'
+
+function getAuthHeaders(): HeadersInit {
+  const token = localStorage.getItem('scalechat_token')
+  const appId = localStorage.getItem('scalechat_app_id')
+  const appSecret = localStorage.getItem('scalechat_app_secret') || 'scalesecret' // Fallback for dev
+
+  return {
+    'Content-Type': 'application/json',
+    ...(token && { 'Authorization': `Bearer ${token}` }),
+    ...(appId && { 'X-App-Id': appId }),
+    ...(appSecret && { 'X-App-Secret': appSecret }),
+  }
+}
+
+async function apiRequest<T>(endpoint: string, options?: RequestInit & { _retry?: boolean }): Promise<T> {
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    ...options,
+    headers: {
+      ...getAuthHeaders(),
+      ...options?.headers,
+    },
+  })
+
+  if (!response.ok) {
+    if (response.status === 401 && !options?._retry && !endpoint.includes('/auth/refresh') && !endpoint.includes('/auth/login')) {
+      const refreshToken = localStorage.getItem('scalechat_refresh_token')
+
+      if (refreshToken) {
+        try {
+          const refreshResponse = await fetch(`${API_BASE}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken })
+          })
+
+          if (refreshResponse.ok) {
+            const data = await refreshResponse.json()
+            localStorage.setItem('scalechat_token', data.token)
+            if (data.refreshToken) {
+              localStorage.setItem('scalechat_refresh_token', data.refreshToken)
+            }
+
+            return apiRequest<T>(endpoint, {
+              ...options,
+              _retry: true
+            })
+          } else {
+            localStorage.removeItem('scalechat_token')
+            localStorage.removeItem('scalechat_refresh_token')
+            localStorage.removeItem('scalechat_user')
+          }
+        } catch (e) {
+          console.error('Token refresh failed:', e)
+        }
+      }
+    }
+
+    const error = await response.json().catch(() => ({ error: 'Request failed' }))
+    throw new Error(error.error || `HTTP ${response.status}`)
+  }
+
+  return response.json()
+}
+
+// Auth
+export const auth = {
+  login: (email: string, password: string, appId?: string, appSecret?: string) =>
+    apiRequest('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email,
+        password,
+        app_id: appId || localStorage.getItem('scalechat_app_id'),
+        app_secret: appSecret || localStorage.getItem('scalechat_app_secret') || 'scalesecret'
+      }),
+    }),
+
+  logout: () =>
+    apiRequest('/auth/logout', { method: 'POST' }),
+
+  me: () =>
+    apiRequest('/auth/me'),
+}
+
+
+// Conversations
+export const conversations = {
+  list: (params?: {
+    status?: 'open' | 'resolved' | 'pending'
+    assignee_id?: string
+    inbox_id?: string
+    page?: number
+  }) => {
+    const query = new URLSearchParams(params as any).toString()
+    return apiRequest(`/conversations?${query}`)
+  },
+
+  get: (id: string) =>
+    apiRequest(`/conversations/${id}`),
+
+  getMessages: (id: string) =>
+    apiRequest(`/conversations/${id}/messages`),
+
+  sendMessage: (id: string, data: {
+    content: string
+    message_type?: 'outgoing' | 'incoming'
+    private?: boolean
+    reply_to_message_id?: string
+  }) =>
+    apiRequest(`/conversations/${id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  assign: (id: string, data: {
+    assignee_id: string
+    team_id?: string
+  }) =>
+    apiRequest(`/conversations/${id}/assign`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateStatus: (id: string, status: 'open' | 'resolved' | 'pending') =>
+    apiRequest(`/conversations/${id}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ status }),
+    }),
+
+  suggestReply: (id: string) =>
+    apiRequest(`/conversations/${id}/suggest-reply`, {
+      method: 'POST',
+    }),
+
+  // Conversation Management (Advanced)
+  resolve: (id: string) =>
+    apiRequest(`/conversations/${id}/resolve`, {
+      method: 'POST',
+    }),
+
+  getAgents: (id: string) =>
+    apiRequest(`/conversations/${id}/agents`),
+
+  addAgent: (id: string, agentId: string) =>
+    apiRequest(`/conversations/${id}/agents`, {
+      method: 'POST',
+      body: JSON.stringify({ agent_id: agentId }),
+    }),
+
+  removeAgent: (id: string, agentId: string) =>
+    apiRequest(`/conversations/${id}/agents/${agentId}`, {
+      method: 'DELETE',
+    }),
+
+  takeover: (id: string) =>
+    apiRequest(`/conversations/${id}/takeover`, {
+      method: 'POST',
+    }),
+
+  getActivity: (id: string) =>
+    apiRequest(`/conversations/${id}/activity`),
+}
+
+// Contact conversations history
+export const contactConversations = {
+  list: (contactId: string) =>
+    apiRequest(`/contacts/${contactId}/conversations`),
+}
+
+// User Timezone
+export const userTimezone = {
+  get: () =>
+    apiRequest<{
+      success: boolean
+      payload: {
+        timezone: string
+        timezone_auto_detected: boolean
+        timezone_updated_at: string | null
+      }
+    }>('/user/timezone'),
+
+  update: (timezone: string) =>
+    apiRequest('/user/timezone', {
+      method: 'PUT',
+      body: JSON.stringify({ timezone }),
+    }),
+
+  detect: (detectedTimezone: string) =>
+    apiRequest<{
+      success: boolean
+      payload: {
+        timezone: string
+        timezone_auto_detected: boolean
+        updated: boolean
+      }
+    }>('/user/timezone/detect', {
+      method: 'POST',
+      body: JSON.stringify({ detected_timezone: detectedTimezone }),
+    }),
+
+  reset: () =>
+    apiRequest('/user/timezone/reset', {
+      method: 'POST',
+    }),
+}
+
+// Agents
+export const agents = {
+  list: () =>
+    apiRequest('/agents'),
+}
+
+// AI
+export const ai = {
+  getSuggestion: (conversationId: string) =>
+    apiRequest('/ai/suggest', {
+      method: 'POST',
+      body: JSON.stringify({ conversationId }),
+    }),
+
+  analyze: (conversationId: string) =>
+    apiRequest('/ai/analyze', {
+      method: 'POST',
+      body: JSON.stringify({ conversationId }),
+    }),
+
+  autoRespond: (conversationId: string) =>
+    apiRequest('/ai/auto-respond', {
+      method: 'POST',
+      body: JSON.stringify({ conversationId }),
+    }),
+}
+
+// Routing
+export const routing = {
+  getRules: () =>
+    apiRequest('/routing/rules'),
+
+  route: (conversationId: string) =>
+    apiRequest('/routing/route', {
+      method: 'POST',
+      body: JSON.stringify({ conversationId }),
+    }),
+}
+
+// Metrics
+export const metrics = {
+  getSummary: (period?: string) =>
+    apiRequest(`/metrics/summary${period ? `?period=${period}` : ''}`),
+
+  getAI: (period?: string) =>
+    apiRequest(`/metrics/ai${period ? `?period=${period}` : ''}`),
+
+  getRouting: (period?: string) =>
+    apiRequest(`/metrics/routing${period ? `?period=${period}` : ''}`),
+
+  getDashboard: () =>
+    apiRequest('/metrics/dashboard'),
+
+  getAgents: () =>
+    apiRequest('/metrics/agents'),
+
+  clear: () =>
+    apiRequest('/metrics/clear', {
+      method: 'POST',
+    }),
+}
+
+// Contacts/Customers
+export const contacts = {
+  list: (params?: {
+    page?: number
+    per_page?: number
+    search?: string
+  }) => {
+    const query = new URLSearchParams(params as any).toString()
+    return apiRequest(`/contacts?${query}`)
+  },
+
+  get: (id: string) =>
+    apiRequest(`/contacts/${id}`),
+}
+
+// Inboxes (Omnichannel)
+export const inboxes = {
+  list: () =>
+    apiRequest('/inboxes'),
+
+  get: (id: string) =>
+    apiRequest(`/inboxes/${id}`),
+
+  create: (data: {
+    name: string
+    channel_type: 'whatsapp' | 'instagram' | 'tiktok' | 'web'
+    channel_config: any
+  }) =>
+    apiRequest('/inboxes', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  update: (id: string, data: any) =>
+    apiRequest(`/inboxes/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  delete: (id: string) =>
+    apiRequest(`/inboxes/${id}`, {
+      method: 'DELETE',
+    }),
+}
+
+
+
+// Knowledge Base
+export const knowledge = {
+  list: () =>
+    apiRequest('/knowledge'),
+
+  add: (data: {
+    title: string
+    content: string
+    type?: 'text' | 'url' | 'pdf'
+  }) =>
+    apiRequest('/knowledge', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  query: (query: string) =>
+    apiRequest('/knowledge/query', {
+      method: 'POST',
+      body: JSON.stringify({ query }),
+    }),
+}
+
+// WhatsApp Channels
+export const whatsappChannels = {
+  sync: (channelId: string) =>
+    apiRequest(`/whatsapp/${channelId}/sync`, {
+      method: 'POST',
+    }),
+
+  getDetails: (channelId: string) =>
+    apiRequest<{
+      success: boolean
+      data: {
+        id: string
+        name: string
+        phone_number: string
+        phone_number_id: string
+        business_id: string
+        business_name: string
+        timezone: string
+        currency: string
+        business_verification_status: string
+        phone_number_status: string
+        quality_rating: string
+        messaging_limit: string
+        verified_name: string
+        is_active: boolean
+        is_on_cloud: boolean
+        is_bot_enabled: boolean
+        is_auto_responder_enabled: boolean
+        forward_enabled: boolean
+        forward_url: string | null
+        badge_url: string | null
+        platform: string
+       last_synced_at: string | null
+        created_at: string
+        updated_at: string
+        quality_score: {
+          percentage: number
+          color: string
+          label: string
+        }
+        limit_info: {
+          daily_limit: string
+          tier_level: number
+        }
+        metadata: {
+          profile_picture_url?: string
+          about?: string
+          description?: string
+          email?: string
+          websites?: string[]
+          vertical?: string
+        }
+      }
+    }>(`/whatsapp/${channelId}/details`),
+
+  uploadBadge: (channelId: string, file: File) => {
+    const formData = new FormData()
+    formData.append('badge', file)
+    return fetch(`${API_BASE}/whatsapp/${channelId}/badge`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: formData
+    }).then(r => r.json())
+  },
+
+  removeBadge: (channelId: string) =>
+    apiRequest(`/whatsapp/${channelId}/badge`, {
+      method: 'DELETE',
+    }),
+}
+}

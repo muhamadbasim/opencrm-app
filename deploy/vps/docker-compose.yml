@@ -1,0 +1,126 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: opencrm-postgres
+    restart: unless-stopped
+    env_file:
+      - ../../.env.production
+    environment:
+      POSTGRES_DB: opencrm_db
+      POSTGRES_USER: postgres
+    ports:
+      - "0.0.0.0:5432:5432"
+    volumes:
+      - opencrm_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d opencrm_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - opencrm
+
+  redis:
+    image: redis:7-alpine
+    container_name: opencrm-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - opencrm_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks:
+      - opencrm
+
+  backend-api:
+    build:
+      context: ../..
+      dockerfile: apps/backend/Dockerfile
+    image: opencrm/backend:${IMAGE_TAG:-latest}
+    container_name: opencrm-backend-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ../../.env.production
+    environment:
+      APP_MODE: api
+      PORT: 3010
+      NODE_ENV: production
+    ports:
+      - "3010:3010"
+      - "127.0.0.1:3011:3011"
+    networks:
+      - opencrm
+
+  backend-worker:
+    image: opencrm/backend:${IMAGE_TAG:-latest}
+    container_name: opencrm-backend-worker
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    depends_on:
+      backend-api:
+        condition: service_started
+    env_file:
+      - ../../.env.production
+    environment:
+      APP_MODE: worker
+      NODE_ENV: production
+    networks:
+      - opencrm
+
+  backend-scheduler:
+    image: opencrm/backend:${IMAGE_TAG:-latest}
+    container_name: opencrm-backend-scheduler
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    depends_on:
+      backend-api:
+        condition: service_started
+    env_file:
+      - ../../.env.production
+    environment:
+      APP_MODE: scheduler
+      NODE_ENV: production
+    networks:
+      - opencrm
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: apps/frontend/Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3010}
+        VITE_SOCKET_URL: ${VITE_SOCKET_URL:-http://localhost:3010}
+        VITE_SOCKET_PATH: ${VITE_SOCKET_PATH:-/socket.io}
+        VITE_APP_ID: ${VITE_APP_ID:-}
+        VITE_APP_SECRET: ${VITE_APP_SECRET:-}
+    image: opencrm/frontend:${IMAGE_TAG:-latest}
+    container_name: opencrm-frontend
+    restart: unless-stopped
+    depends_on:
+      backend-api:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: 80
+    ports:
+      - "3005:80"
+    networks:
+      - opencrm
+
+networks:
+  opencrm:
+    name: opencrm-network
+
+volumes:
+  opencrm_postgres_data:
+  opencrm_redis_data:

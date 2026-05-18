@@ -1,0 +1,51 @@
+global:
+  env:
+    NODE_ENV: production
+    FRONTEND_URL: https://app.scalebiz.chat
+    SOCKET_IO_CORS_ORIGIN: https://app.scalebiz.chat
+
+ingress:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  appHost: app.scalebiz.chat
+  apiHost: api.scalebiz.chat
+  tls:
+    enabled: true
+    secretName: scalebiz-tls
+
+# Enable these when moving Meta webhooks to dedicated mTLS ingress host.
+webhookIngress:
+  enabled: false
+  host: webhook-api.scalebiz.chat
+  tls:
+    enabled: true
+    secretName: scalebiz-webhook-tls
+
+webhookMtls:
+  enabled: false
+
+frontend:
+  replicaCount: 2
+
+api:
+  replicaCount: 2
+
+worker:
+  replicaCount: 1
+
+scheduler:
+  replicaCount: 1
+  updateStrategy:
+    type: Recreate
+
+hpa:
+  api:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+  worker:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70

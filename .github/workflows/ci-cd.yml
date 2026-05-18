@@ -1,0 +1,228 @@
+name: Deploy Scalebiz (SSH + Docker Compose)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scalebiz-production
+  cancel-in-progress: false
+
+env:
+  IMAGE_TAG: ${{ github.sha }}
+  SSH_HOST: 43.156.163.46
+  SSH_USER: ubuntu
+  REMOTE_APP_DIR: /home/ubuntu/opencrm-app
+  COMPOSE_PROJECT: vps
+  APP_HOST: crm.scalebiz.chat
+  API_HOST: api-crm.scalebiz.chat
+  FRONTEND_ORIGIN: https://crm.scalebiz.chat
+  VITE_API_URL: https://api-crm.scalebiz.chat
+  VITE_SOCKET_URL: https://api-crm.scalebiz.chat
+  VITE_SOCKET_PATH: /socket.io
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.15
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+        run: bun run --filter backend db:generate
+
+      - name: Build backend
+        run: bun run build:backend
+
+      - name: Build frontend
+        run: bun run build:frontend
+
+  docker:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image archive
+        run: |
+          docker build -t opencrm/backend:${IMAGE_TAG} -f ./apps/backend/Dockerfile .
+          docker save opencrm/backend:${IMAGE_TAG} | gzip -1 > opencrm-backend-${IMAGE_TAG}.tar.gz
+
+      - name: Build frontend image archive
+        run: |
+          docker build \
+            --build-arg VITE_API_URL="${VITE_API_URL}" \
+            --build-arg VITE_SOCKET_URL="${VITE_SOCKET_URL}" \
+            --build-arg VITE_SOCKET_PATH="${VITE_SOCKET_PATH}" \
+            -t opencrm/frontend:${IMAGE_TAG} \
+            -f ./apps/frontend/Dockerfile .
+          docker save opencrm/frontend:${IMAGE_TAG} | gzip -1 > opencrm-frontend-${IMAGE_TAG}.tar.gz
+
+      - name: Upload docker image artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-images-${{ github.sha }}
+          path: |
+            opencrm-backend-${{ github.sha }}.tar.gz
+            opencrm-frontend-${{ github.sha }}.tar.gz
+          retention-days: 1
+
+  deploy:
+    needs: docker
+    runs-on: ubuntu-latest
+    environment: Dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download docker image artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images-${{ github.sha }}
+          path: ./artifacts
+
+      - name: Ensure SSH secret exists
+        run: |
+          test -n "${{ secrets.SSH_PRIVATE_KEY }}" || (echo "Missing secret SSH_PRIVATE_KEY" && exit 1)
+
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Trust SSH host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${SSH_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Ensure remote Docker Compose workspace exists
+        run: |
+          ssh "${SSH_USER}@${SSH_HOST}" "set -e; mkdir -p '${REMOTE_APP_DIR}/deploy/vps'; test -f '${REMOTE_APP_DIR}/.env.production'"
+
+      - name: Sync Docker Compose manifests to server
+        run: |
+          rsync -az --delete ./deploy/vps/ "${SSH_USER}@${SSH_HOST}:${REMOTE_APP_DIR}/deploy/vps/"
+
+      - name: Upload image archives to server
+        run: |
+          scp ./artifacts/opencrm-backend-${IMAGE_TAG}.tar.gz "${SSH_USER}@${SSH_HOST}:/tmp/"
+          scp ./artifacts/opencrm-frontend-${IMAGE_TAG}.tar.gz "${SSH_USER}@${SSH_HOST}:/tmp/"
+
+      - name: Load images, migrate database, and deploy
+        run: |
+          ssh "${SSH_USER}@${SSH_HOST}" \
+            "IMAGE_TAG='${IMAGE_TAG}' REMOTE_APP_DIR='${REMOTE_APP_DIR}' COMPOSE_PROJECT='${COMPOSE_PROJECT}' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          cd "${REMOTE_APP_DIR}/deploy/vps"
+          test -f ../../.env.production
+
+          gzip -dc "/tmp/opencrm-backend-${IMAGE_TAG}.tar.gz" | docker load
+          gzip -dc "/tmp/opencrm-frontend-${IMAGE_TAG}.tar.gz" | docker load
+
+          IMAGE_TAG="${IMAGE_TAG}" docker compose --env-file ../../.env.production -p "${COMPOSE_PROJECT}" run --rm --no-deps -T backend-api bunx prisma migrate deploy </dev/null
+          IMAGE_TAG="${IMAGE_TAG}" docker compose --env-file ../../.env.production -p "${COMPOSE_PROJECT}" up -d --no-build --remove-orphans --force-recreate backend-api backend-worker backend-scheduler frontend
+
+          for i in $(seq 1 40); do
+            api_status="$(docker inspect --format '{{.State.Health.Status}}' opencrm-backend-api 2>/dev/null || true)"
+            frontend_status="$(docker inspect --format '{{.State.Health.Status}}' opencrm-frontend 2>/dev/null || true)"
+            echo "health[$i] api=${api_status:-unknown} frontend=${frontend_status:-unknown}"
+            if [ "${api_status}" = "healthy" ] && [ "${frontend_status}" = "healthy" ]; then
+              break
+            fi
+            sleep 3
+          done
+
+          test "$(docker inspect --format '{{.State.Health.Status}}' opencrm-backend-api)" = "healthy"
+          test "$(docker inspect --format '{{.State.Health.Status}}' opencrm-frontend)" = "healthy"
+          test "$(docker inspect --format '{{.Config.Image}}' opencrm-backend-api)" = "opencrm/backend:${IMAGE_TAG}"
+          test "$(docker inspect --format '{{.Config.Image}}' opencrm-backend-worker)" = "opencrm/backend:${IMAGE_TAG}"
+          test "$(docker inspect --format '{{.Config.Image}}' opencrm-backend-scheduler)" = "opencrm/backend:${IMAGE_TAG}"
+          test "$(docker inspect --format '{{.Config.Image}}' opencrm-frontend)" = "opencrm/frontend:${IMAGE_TAG}"
+
+          docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' | grep -E 'opencrm|NAMES'
+          rm -f "/tmp/opencrm-backend-${IMAGE_TAG}.tar.gz" "/tmp/opencrm-frontend-${IMAGE_TAG}.tar.gz"
+          REMOTE
+
+      - name: Post-deploy smoke checks
+        run: |
+          set -euo pipefail
+
+          echo "Smoke check: API health"
+          curl -fsS --retry 5 --retry-delay 2 --retry-connrefused "https://${API_HOST}/health" >/dev/null
+
+          echo "Smoke check: Frontend login page"
+          curl -fsSL --retry 5 --retry-delay 2 --retry-connrefused "https://${APP_HOST}/login" >/dev/null
+
+          echo "Smoke check: Socket.IO websocket handshake"
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const https = require("node:https");
+
+          const host = process.env.API_HOST;
+          const origin = process.env.FRONTEND_ORIGIN;
+          const socketPath = "/socket.io/?EIO=4&transport=websocket";
+          const key = crypto.randomBytes(16).toString("base64");
+          const expectedAccept = crypto
+            .createHash("sha1")
+            .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+            .digest("base64");
+
+          const req = https.request({
+            host,
+            port: 443,
+            method: "GET",
+            path: socketPath,
+            headers: {
+              Connection: "Upgrade",
+              Upgrade: "websocket",
+              "Sec-WebSocket-Key": key,
+              "Sec-WebSocket-Version": "13",
+              Origin: origin,
+            },
+            timeout: 10000,
+          });
+
+          req.on("upgrade", (res, socket) => {
+            const accept = res.headers["sec-websocket-accept"];
+            if (res.statusCode !== 101 || accept !== expectedAccept) {
+              console.error(`Unexpected websocket handshake: status=${res.statusCode}, accept=${accept}`);
+              socket.destroy();
+              process.exit(1);
+            }
+            socket.destroy();
+            console.log("Socket.IO websocket handshake OK");
+            process.exit(0);
+          });
+
+          req.on("response", (res) => {
+            console.error(`Expected HTTP 101 upgrade, received ${res.statusCode}`);
+            process.exit(1);
+          });
+
+          req.on("timeout", () => {
+            req.destroy(new Error("websocket handshake timeout"));
+          });
+
+          req.on("error", (error) => {
+            console.error(`Websocket smoke check failed: ${error.message}`);
+            process.exit(1);
+          });
+
+          req.end();
+          NODE
