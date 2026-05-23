@@ -997,7 +997,7 @@ export abstract class DecisionEngineService {
 				app_id: appId,
 				flow_id: targetFlowId,
 				active: true,
-				policy: this.mergePolicy(DEFAULT_DECISION_POLICY),
+				policy: DecisionEngineService.mergePolicy(DEFAULT_DECISION_POLICY),
 				updated_at: null,
 			}
 		}
@@ -1007,7 +1007,7 @@ export abstract class DecisionEngineService {
 			app_id: row.app_id,
 			flow_id: row.flow_id || null,
 			active: row.active !== false,
-			policy: this.mergePolicy(asRecord(row.policy)),
+			policy: DecisionEngineService.mergePolicy(asRecord(row.policy)),
 			updated_at: row.updated_at ? row.updated_at.toISOString() : null,
 		}
 	}
@@ -1036,7 +1036,7 @@ export abstract class DecisionEngineService {
 			targetFlowId,
 		)
 		const existing = existingRows[0]
-		const mergedPolicy = this.mergePolicy({
+		const mergedPolicy = DecisionEngineService.mergePolicy({
 			...(existing ? asRecord(existing.policy) : {}),
 			...params.policyPatch,
 		})
@@ -1085,13 +1085,13 @@ export abstract class DecisionEngineService {
 			)
 		}
 
-		return this.getPolicy(params.appId, targetFlowId)
+		return DecisionEngineService.getPolicy(params.appId, targetFlowId)
 	}
 
 	static async evaluateInbound(
 		params: EvaluateInboundParams,
 	): Promise<DecisionEnvelope> {
-		const policyEnvelope = await this.getPolicy(params.appId, params.flowId)
+		const policyEnvelope = await DecisionEngineService.getPolicy(params.appId, params.flowId)
 		const policy = policyEnvelope.policy
 		const incomingText = String(params.incomingText || '').trim()
 
@@ -1124,7 +1124,7 @@ export abstract class DecisionEngineService {
 		])
 
 		if (!conversation?.id) {
-			const fallbackPolicy = this.mergePolicy(policy)
+			const fallbackPolicy = DecisionEngineService.mergePolicy(policy)
 			return {
 				intent: 'unknown',
 				intent_confidence: 0.2,
@@ -1174,7 +1174,7 @@ export abstract class DecisionEngineService {
 		const intentConfidence = intentDetection.confidence
 		const isGreeting = isLikelyGreeting(incomingText)
 
-		const knowledgeResult = await this.safeRetrieval(params.appId, incomingText)
+		const knowledgeResult = await DecisionEngineService.safeRetrieval(params.appId, incomingText)
 		const retrievalScore = Number(
 			clamp(
 				knowledgeResult.hitScore > 0
@@ -1185,7 +1185,7 @@ export abstract class DecisionEngineService {
 			).toFixed(6),
 		)
 
-		const commerceSnapshot = await this.loadCommerceSnapshot({
+		const commerceSnapshot = await DecisionEngineService.loadCommerceSnapshot({
 			appId: params.appId,
 			conversationId: params.conversationId,
 			contactId: conversation.contact_id,
@@ -1235,7 +1235,7 @@ export abstract class DecisionEngineService {
 			clamp((retrievalScore + commerceSnapshot.productMatchScore) / 2).toFixed(6),
 		)
 
-		const weights = this.normalizeWeights(policy.weights)
+		const weights = DecisionEngineService.normalizeWeights(policy.weights)
 		const overallConfidence = computeOverallConfidence({
 			modelConfidence,
 			retrievalProductScore,
@@ -1243,7 +1243,7 @@ export abstract class DecisionEngineService {
 			weights,
 		})
 
-		const thresholds = this.resolveThresholds(policy, intent)
+		const thresholds = DecisionEngineService.resolveThresholds(policy, intent)
 		const confidenceBand = normalizeConfidenceBand(overallConfidence, thresholds)
 		const override = policy.intent_overrides[intent]
 		const defaultAction = resolveRecommendedAction(
@@ -1271,7 +1271,7 @@ export abstract class DecisionEngineService {
 				promptInjectionRisk,
 			})
 		const approvalReason = requiresApproval
-			? this.resolveApprovalReason({
+			? DecisionEngineService.resolveApprovalReason({
 					confidenceBand,
 					intent,
 					churnRisk,
@@ -1281,7 +1281,7 @@ export abstract class DecisionEngineService {
 				})
 			: null
 
-		const personaId = await this.resolvePersonaId({
+		const personaId = await DecisionEngineService.resolvePersonaId({
 			appId: params.appId,
 			intent,
 			policy,
@@ -1313,7 +1313,7 @@ export abstract class DecisionEngineService {
 			created_at: new Date().toISOString(),
 		}
 
-		await this.persistConversationSignal({
+		await DecisionEngineService.persistConversationSignal({
 			appId: params.appId,
 			conversationId: params.conversationId,
 			flowId: params.flowId,
@@ -1351,7 +1351,7 @@ export abstract class DecisionEngineService {
 		})
 
 		const eventText = asString(lastCustomerMessage?.content) || params.event
-		return this.evaluateInbound({
+		return DecisionEngineService.evaluateInbound({
 			appId: params.appId,
 			conversationId: params.conversationId,
 			flowId: params.flowId || null,
@@ -1407,7 +1407,7 @@ export abstract class DecisionEngineService {
 			params.conversationId,
 			limit,
 		)
-		return rows.map((row) => this.mapSignalRow(row))
+		return rows.map((row) => DecisionEngineService.mapSignalRow(row))
 	}
 
 	static async getDecisionEvaluationSummary(params: {
@@ -1418,7 +1418,7 @@ export abstract class DecisionEngineService {
 		limit?: number
 	}): Promise<DecisionEvaluationSummary> {
 		const targetFlowId = params.flowId && isUuid(params.flowId) ? params.flowId : null
-		const policyEnvelope = await this.getPolicy(params.appId, targetFlowId)
+		const policyEnvelope = await DecisionEngineService.getPolicy(params.appId, targetFlowId)
 		const toDate = asDate(params.to) || new Date()
 		const fromDate = asDate(params.from)
 		const resolvedFrom = fromDate || new Date(toDate.getTime() - 7 * 24 * 60 * 60 * 1000)

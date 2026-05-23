@@ -69,7 +69,7 @@ async function ensureLegacyModeLoaded() {
 							AND column_name = 'default_ticket_board_id'
 					) AS "exists"
 				`
-				useLegacyAgentSettingsQueries = !Boolean(rows[0]?.exists)
+				useLegacyAgentSettingsQueries = !rows[0]?.exists
 			} catch {
 				// Keep modern mode when metadata lookup fails; runtime fallback still handles P2022.
 			}

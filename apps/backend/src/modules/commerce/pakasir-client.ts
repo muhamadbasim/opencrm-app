@@ -72,7 +72,7 @@ function pickNested(input: unknown, keys: string[]): unknown {
 
 		const record = current as Record<string, unknown>
 		for (const key of keys) {
-			if (Object.prototype.hasOwnProperty.call(record, key)) {
+			if (Object.hasOwn(record, key)) {
 				const value = record[key]
 				if (value !== undefined && value !== null && `${value}`.trim() !== '') {
 					return value
@@ -131,7 +131,7 @@ export abstract class PakasirClient {
 	private static config: PakasirClientConfig | null = null
 
 	private static getEnvConfig(): PakasirClientConfig {
-		if (this.config) return this.config
+		if (PakasirClient.config) return PakasirClient.config
 
 		const missing = REQUIRED_ENV.filter((key) => {
 			const value = process.env[key]
@@ -145,7 +145,7 @@ export abstract class PakasirClient {
 		}
 
 		const mode = normalizeMode(process.env.PAKASIR_MODE)
-		this.config = {
+		PakasirClient.config = {
 			mode,
 			baseUrl: resolveBaseUrl(process.env.PAKASIR_BASE_URL, mode),
 			projectSlug:
@@ -154,7 +154,7 @@ export abstract class PakasirClient {
 			apiKey: String(process.env.PAKASIR_API_KEY || '').trim(),
 			redirectUrl: toStringOrNull(process.env.PAKASIR_REDIRECT_URL),
 		}
-		return this.config
+		return PakasirClient.config
 	}
 
 	private static getConfig(
@@ -163,7 +163,7 @@ export abstract class PakasirClient {
 	): PakasirClientConfig {
 		let envConfig: PakasirClientConfig | null = null
 		try {
-			envConfig = this.getEnvConfig()
+			envConfig = PakasirClient.getEnvConfig()
 		} catch {
 			envConfig = null
 		}
@@ -203,7 +203,7 @@ export abstract class PakasirClient {
 	static isConfigured(config?: PakasirClientConfigInput): boolean {
 		if (config && toStringOrNull(config.apiKey)) return true
 		try {
-			const resolved = this.getConfig(config, true)
+			const resolved = PakasirClient.getConfig(config, true)
 			return Boolean(resolved.apiKey && resolved.apiKey.trim())
 		} catch {
 			return false
@@ -225,13 +225,13 @@ export abstract class PakasirClient {
 		init: RequestInit,
 		configOverride?: PakasirClientConfigInput,
 	): Promise<Record<string, unknown>> {
-		const config = this.getConfig(configOverride)
+		const config = PakasirClient.getConfig(configOverride)
 		const url = `${config.baseUrl}/${path.replace(/^\/+/, '')}`
 
 		const response = await fetch(url, {
 			...init,
 			headers: {
-				...this.getHeaders(config),
+				...PakasirClient.getHeaders(config),
 				...(init.headers || {}),
 			},
 		})
@@ -333,7 +333,7 @@ export abstract class PakasirClient {
 		payload: Record<string, unknown>,
 		configOverride?: PakasirClientConfigInput,
 	): Promise<PakasirTransactionNormalized> {
-		const config = this.getConfig(configOverride)
+		const config = PakasirClient.getConfig(configOverride)
 		const normalizedMethod = String(method || '').trim().toLowerCase() || 'qris'
 		const projectSlug =
 			toStringOrNull(payload.project_slug || payload.project) || config.projectSlug
@@ -351,7 +351,7 @@ export abstract class PakasirClient {
 			requestBody.redirect_url = config.redirectUrl
 		}
 
-		const response = await this.request(
+		const response = await PakasirClient.request(
 			`transactioncreate/${normalizedMethod}`,
 			{
 				method: 'POST',
@@ -360,7 +360,7 @@ export abstract class PakasirClient {
 			config,
 		)
 
-		return this.normalizeTransaction(response)
+		return PakasirClient.normalizeTransaction(response)
 	}
 
 	static async getTransactionDetail(
@@ -372,7 +372,7 @@ export abstract class PakasirClient {
 			throw new Error('Pakasir reference ID is required for transaction detail')
 		}
 
-		const config = this.getConfig(configOverride)
+		const config = PakasirClient.getConfig(configOverride)
 		const payload: Record<string, unknown> = {
 			api_key: config.apiKey,
 			mode: config.mode,
@@ -386,7 +386,7 @@ export abstract class PakasirClient {
 		}
 
 		try {
-			const response = await this.request(
+			const response = await PakasirClient.request(
 				'transactiondetail',
 				{
 					method: 'POST',
@@ -394,7 +394,7 @@ export abstract class PakasirClient {
 				},
 				config,
 			)
-			return this.normalizeTransaction(response)
+			return PakasirClient.normalizeTransaction(response)
 		} catch {
 			const query = new URLSearchParams({
 				mode: config.mode,
@@ -404,12 +404,12 @@ export abstract class PakasirClient {
 				query.set('project_slug', config.projectSlug)
 				query.set('project', config.projectSlug)
 			}
-			const response = await this.request(
+			const response = await PakasirClient.request(
 				`transactiondetail?${query.toString()}`,
 				{ method: 'GET' },
 				config,
 			)
-			return this.normalizeTransaction(response)
+			return PakasirClient.normalizeTransaction(response)
 		}
 	}
 
@@ -423,8 +423,8 @@ export abstract class PakasirClient {
 			throw new Error('Pakasir reference ID is required for transaction cancel')
 		}
 
-		const config = this.getConfig(configOverride)
-		const response = await this.request(
+		const config = PakasirClient.getConfig(configOverride)
+		const response = await PakasirClient.request(
 			'transactioncancel',
 			{
 				method: 'POST',
@@ -445,7 +445,7 @@ export abstract class PakasirClient {
 			config,
 		)
 
-		return this.normalizeTransaction(response)
+		return PakasirClient.normalizeTransaction(response)
 	}
 
 	static buildHostedPaymentUrl(
@@ -456,7 +456,7 @@ export abstract class PakasirClient {
 		const normalized = toStringOrNull(identifier)
 		if (normalized && /^https?:\/\//i.test(normalized)) return normalized
 
-		const config = this.getConfig(configOverride, true)
+		const config = PakasirClient.getConfig(configOverride, true)
 		const root = normalizeHostedBaseUrl(config.baseUrl)
 		const orderId = toStringOrNull(options.orderId) || normalized
 		const amount = toPositiveIntegerString(options.amount)

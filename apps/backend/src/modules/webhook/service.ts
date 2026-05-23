@@ -1725,7 +1725,7 @@ export abstract class WebhookService {
 				},
 			})
 		}
-		await this.emitMessageCreatedEvent({
+		await WebhookService.emitMessageCreatedEvent({
 			appId: result.appId,
 			conversationId: result.conversationId,
 			message: result.message,
@@ -1773,7 +1773,7 @@ export abstract class WebhookService {
 
 		if (!skipChatbotAutoReply) {
 			try {
-				await this.scheduleChatbotAutoReply({
+				await WebhookService.scheduleChatbotAutoReply({
 					appId: result.appId,
 					inboxId: result.inboxId,
 					conversationId: result.conversationId,
@@ -1963,7 +1963,7 @@ export abstract class WebhookService {
 				}
 
 				try {
-					const result = await this.storeNormalizedWhatsAppInboundMessage({
+					const result = await WebhookService.storeNormalizedWhatsAppInboundMessage({
 						channel: resolvedChannel,
 						message: normalizedMessage,
 					})
@@ -1971,7 +1971,7 @@ export abstract class WebhookService {
 						stats.duplicates += 1
 					} else {
 						stats.messagesCreated += 1
-						await this.processCreatedWhatsAppInboundResult(result)
+						await WebhookService.processCreatedWhatsAppInboundResult(result)
 					}
 				} catch (error: any) {
 					stats.errors += 1
@@ -1981,7 +1981,7 @@ export abstract class WebhookService {
 				}
 			} else if (event === 'message.status') {
 				try {
-					const updated = await this.applyBridgeWhatsAppStatus(
+					const updated = await WebhookService.applyBridgeWhatsAppStatus(
 						Object.keys(asRecord(payload?.status)).length > 0
 							? asRecord(payload?.status)
 							: asRecord(payload),
@@ -2025,7 +2025,7 @@ export abstract class WebhookService {
 
 	static async handleWhatsAppInbound(payload: any, webhookEventId?: string) {
 		if (asString(payload?.event)) {
-			return this.handleNormalizedBridgeWhatsAppInbound(
+			return WebhookService.handleNormalizedBridgeWhatsAppInbound(
 				payload,
 				webhookEventId,
 			)
@@ -2097,7 +2097,7 @@ export abstract class WebhookService {
 						: []
 					for (const inbound of incomingMessages) {
 						try {
-							const result = await this.storeIncomingWhatsAppMessage({
+							const result = await WebhookService.storeIncomingWhatsAppMessage({
 								channel: resolvedChannel,
 								value,
 								message: inbound,
@@ -2106,7 +2106,7 @@ export abstract class WebhookService {
 								stats.duplicates += 1
 							} else {
 								stats.messagesCreated += 1
-								await this.processCreatedWhatsAppInboundResult(result)
+								await WebhookService.processCreatedWhatsAppInboundResult(result)
 							}
 						} catch (error: any) {
 							stats.errors += 1
@@ -2117,7 +2117,7 @@ export abstract class WebhookService {
 					const statuses = Array.isArray(value?.statuses) ? value.statuses : []
 					for (const status of statuses) {
 						try {
-							const updated = await this.applyWhatsAppStatus(status)
+							const updated = await WebhookService.applyWhatsAppStatus(status)
 							if (updated) stats.statusesUpdated += 1
 						} catch (error: any) {
 							stats.errors += 1
@@ -2208,7 +2208,7 @@ export abstract class WebhookService {
 					resolvedInboxId = resolvedInboxId || inbox.id
 
 					try {
-						const result = await this.storeIncomingInstagramMessage({
+						const result = await WebhookService.storeIncomingInstagramMessage({
 							inbox,
 							event,
 						})
@@ -2271,7 +2271,7 @@ export abstract class WebhookService {
 									},
 								})
 							}
-							await this.emitInstagramMessageCreatedEvent({
+							await WebhookService.emitInstagramMessageCreatedEvent({
 								appId: result.appId,
 								conversationId: result.conversationId,
 								message: result.message,
@@ -2304,7 +2304,7 @@ export abstract class WebhookService {
 
 							if (!skipChatbotAutoReply) {
 								try {
-									await this.scheduleChatbotAutoReply({
+									await WebhookService.scheduleChatbotAutoReply({
 										appId: result.appId,
 										inboxId: result.inboxId,
 										conversationId: result.conversationId,
@@ -2409,7 +2409,7 @@ export abstract class WebhookService {
 				resolvedInboxId = resolvedInboxId || inbox.id
 
 				try {
-					const result = await this.storeIncomingTikTokMessage({
+					const result = await WebhookService.storeIncomingTikTokMessage({
 						inbox,
 						event,
 					})
@@ -2478,7 +2478,7 @@ export abstract class WebhookService {
 						})
 					}
 
-					await this.emitTikTokMessageCreatedEvent({
+					await WebhookService.emitTikTokMessageCreatedEvent({
 						appId: result.appId,
 						conversationId: result.conversationId,
 						message: result.message,
@@ -2512,7 +2512,7 @@ export abstract class WebhookService {
 
 					if (!skipChatbotAutoReply) {
 						try {
-							await this.scheduleChatbotAutoReply({
+							await WebhookService.scheduleChatbotAutoReply({
 								appId: result.appId,
 								inboxId: result.inboxId,
 								conversationId: result.conversationId,
@@ -2584,11 +2584,11 @@ export abstract class WebhookService {
 			return { success: false, skipped: true, reason: 'invalid_payload' }
 		}
 
-		if (!(await this.isLatestAutoReplyToken(conversationId, debounceToken))) {
+		if (!(await WebhookService.isLatestAutoReplyToken(conversationId, debounceToken))) {
 			return { success: true, skipped: true, reason: 'stale_token' }
 		}
 
-		await this.maybeSendChatbotAutoReply({
+		await WebhookService.maybeSendChatbotAutoReply({
 			appId: params.appId,
 			inboxId: params.inboxId,
 			conversationId,
@@ -2607,7 +2607,7 @@ export abstract class WebhookService {
 
 	private static async scheduleChatbotAutoReply(params: AutoReplyParams) {
 		if (!AI_AUTOREPLY_DEBOUNCE_ENABLED) {
-			await this.maybeSendChatbotAutoReply(params)
+			await WebhookService.maybeSendChatbotAutoReply(params)
 			return
 		}
 
@@ -2931,7 +2931,7 @@ export abstract class WebhookService {
 			)
 		}
 
-		const selectedAgentId = await this.pickAssigneeByDistribution({
+		const selectedAgentId = await WebhookService.pickAssigneeByDistribution({
 			appId: params.appId,
 			candidateAgentIds,
 			distributionMethod: params.distributionMethod,
@@ -3080,26 +3080,26 @@ export abstract class WebhookService {
 		}
 
 		const inboxHasTeamConfig =
-			Object.prototype.hasOwnProperty.call(
+			Object.hasOwn(
 				inboxChannelConfig,
 				'default_team_ids',
 			) ||
-			Object.prototype.hasOwnProperty.call(inboxChannelConfig, 'defaultTeamIds')
+			Object.hasOwn(inboxChannelConfig, 'defaultTeamIds')
 		const inboxHasAgentConfig =
-			Object.prototype.hasOwnProperty.call(
+			Object.hasOwn(
 				inboxChannelConfig,
 				'default_agent_ids',
 			) ||
-			Object.prototype.hasOwnProperty.call(
+			Object.hasOwn(
 				inboxChannelConfig,
 				'defaultAgentIds',
 			)
 		const inboxHasDistributionConfig =
-			Object.prototype.hasOwnProperty.call(
+			Object.hasOwn(
 				inboxChannelConfig,
 				'distribution_method',
 			) ||
-			Object.prototype.hasOwnProperty.call(
+			Object.hasOwn(
 				inboxChannelConfig,
 				'distributionMethod',
 			)
@@ -3144,7 +3144,7 @@ export abstract class WebhookService {
 		let excludedMessageIds: string[] = []
 
 		if (aggregatePendingInbound || !incomingText) {
-			const pendingBatch = await this.collectPendingInboundBatch(
+			const pendingBatch = await WebhookService.collectPendingInboundBatch(
 				params.conversationId,
 			)
 			if (!pendingBatch) return
@@ -3155,7 +3155,7 @@ export abstract class WebhookService {
 
 		if (!incomingText) return
 		if (
-			!(await this.isLatestAutoReplyToken(
+			!(await WebhookService.isLatestAutoReplyToken(
 				params.conversationId,
 				params.debounceToken,
 			))
@@ -3278,7 +3278,7 @@ export abstract class WebhookService {
 			},
 		)
 		if (
-			!(await this.isLatestAutoReplyToken(
+			!(await WebhookService.isLatestAutoReplyToken(
 				params.conversationId,
 				params.debounceToken,
 			))
@@ -3287,7 +3287,7 @@ export abstract class WebhookService {
 		}
 		const toolsCalled = resolveToolCallCount(response.meta.tools_called)
 		const toolsSucceeded = resolveToolCallCount(response.meta.tools_succeeded)
-		const syncedLabel = await this.syncAiLabelToConversation({
+		const syncedLabel = await WebhookService.syncAiLabelToConversation({
 			appId: params.appId,
 			conversationId: params.conversationId,
 			labelId: response.meta.label_applied_id,
@@ -3472,7 +3472,7 @@ export abstract class WebhookService {
 
 		const emitRealtimeMessage = async (message: any) => {
 			if (params.channelType === 'instagram') {
-				await this.emitInstagramMessageCreatedEvent({
+				await WebhookService.emitInstagramMessageCreatedEvent({
 					appId: params.appId,
 					conversationId: params.conversationId,
 					message,
@@ -3490,7 +3490,7 @@ export abstract class WebhookService {
 			}
 
 			if (params.channelType === 'tiktok') {
-				await this.emitTikTokMessageCreatedEvent({
+				await WebhookService.emitTikTokMessageCreatedEvent({
 					appId: params.appId,
 					conversationId: params.conversationId,
 					message,
@@ -3507,7 +3507,7 @@ export abstract class WebhookService {
 				return
 			}
 
-			await this.emitMessageCreatedEvent({
+			await WebhookService.emitMessageCreatedEvent({
 				appId: params.appId,
 				conversationId: params.conversationId,
 				message,
@@ -3542,7 +3542,7 @@ export abstract class WebhookService {
 
 		if (shouldEscalateToHuman) {
 			try {
-				await this.escalateConversationToHuman({
+				await WebhookService.escalateConversationToHuman({
 					appId: params.appId,
 					conversationId: params.conversationId,
 					defaultTeamIds: escalationDefaultTeamIds,
@@ -4807,7 +4807,7 @@ export abstract class WebhookService {
 			}
 		}
 
-		return this.storeNormalizedWhatsAppInboundMessage({
+		return WebhookService.storeNormalizedWhatsAppInboundMessage({
 			channel,
 			message: {
 				externalMessageId,
@@ -5137,7 +5137,7 @@ export abstract class WebhookService {
 		})
 
 		if (message.conversation_id) {
-			this.emitMessageStatusUpdatedEvent({
+			WebhookService.emitMessageStatusUpdatedEvent({
 				messageId: message.id,
 				externalMessageId:
 					message.external_id || externalMessageId || message.id,
@@ -5198,7 +5198,7 @@ export abstract class WebhookService {
 		})
 
 		if (message.conversation_id) {
-			this.emitMessageStatusUpdatedEvent({
+			WebhookService.emitMessageStatusUpdatedEvent({
 				messageId: message.id,
 				externalMessageId: message.external_id || externalMessageId,
 				conversationId: message.conversation_id,

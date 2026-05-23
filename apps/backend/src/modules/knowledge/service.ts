@@ -1004,7 +1004,7 @@ export abstract class KnowledgeService {
     if (!existing) return null;
 
     const nextTitle = normalizeString(input.title) || existing.title;
-    const hasContentInput = Object.prototype.hasOwnProperty.call(
+    const hasContentInput = Object.hasOwn(
       input,
       "content",
     );
@@ -1348,7 +1348,7 @@ export abstract class KnowledgeService {
     const usageCredits = Number((totalTokens * 0.001).toFixed(6));
     const usageIdr = Number((usageUsd * 16000).toFixed(6));
 
-    const logId = await this.logRetrievalObservation({
+    const logId = await KnowledgeService.logRetrievalObservation({
       appId: targetAppId,
       channel,
       queryText,

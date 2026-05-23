@@ -778,7 +778,7 @@ export abstract class CommerceService {
 	}
 
 	private static async getStoredPakasirConfig(appId: string) {
-		const key = this.getPakasirSettingsKey(appId)
+		const key = CommerceService.getPakasirSettingsKey(appId)
 		const row = await prisma.platform_settings.findUnique({
 			where: { key },
 			select: { value: true },
@@ -804,8 +804,8 @@ export abstract class CommerceService {
 	private static async resolvePakasirConfig(
 		appId: string,
 	): Promise<PakasirRuntimeConfig> {
-		const envConfig = this.resolveEnvPakasirConfig()
-		const stored = await this.getStoredPakasirConfig(appId)
+		const envConfig = CommerceService.resolveEnvPakasirConfig()
+		const stored = await CommerceService.getStoredPakasirConfig(appId)
 
 		if (Object.keys(stored).length === 0) {
 			return envConfig
@@ -858,8 +858,8 @@ export abstract class CommerceService {
 		requestUrl?: string,
 		headers?: Record<string, unknown>,
 	) {
-		const resolvedAppId = this.ensureValidAppId(appId)
-		const resolved = await this.resolvePakasirConfig(resolvedAppId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
+		const resolved = await CommerceService.resolvePakasirConfig(resolvedAppId)
 		const webhookBase = resolvePublicApiBaseUrl(requestUrl, headers)
 
 		return {
@@ -883,8 +883,8 @@ export abstract class CommerceService {
 		requestUrl?: string,
 		headers?: Record<string, unknown>,
 	) {
-		const resolvedAppId = this.ensureValidAppId(appId)
-		const key = this.getPakasirSettingsKey(resolvedAppId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
+		const key = CommerceService.getPakasirSettingsKey(resolvedAppId)
 		const existing = await prisma.platform_settings.findUnique({
 			where: { key },
 			select: { value: true },
@@ -893,7 +893,7 @@ export abstract class CommerceService {
 
 		const payload = input || {}
 		const has = (field: string) =>
-			Object.prototype.hasOwnProperty.call(payload, field)
+			Object.hasOwn(payload, field)
 
 		const next: Record<string, unknown> = { ...current }
 
@@ -945,7 +945,7 @@ export abstract class CommerceService {
 			},
 		})
 
-		return this.getPakasirSettings(resolvedAppId, requestUrl, headers)
+		return CommerceService.getPakasirSettings(resolvedAppId, requestUrl, headers)
 	}
 
 	private static async recalculateOrderTotals(db: DBClient, orderId: string) {
@@ -1692,7 +1692,7 @@ export abstract class CommerceService {
 					orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
 					take: 5,
 				}),
-				this.ensureVipTag({
+				CommerceService.ensureVipTag({
 					db: prisma,
 					appId,
 					contactId: conversation.contact_id,
@@ -1769,7 +1769,7 @@ export abstract class CommerceService {
 	) {
 		const pick = (keys: string[]): string | null => {
 			for (const key of keys) {
-				if (!Object.prototype.hasOwnProperty.call(payload, key)) continue
+				if (!Object.hasOwn(payload, key)) continue
 				const value = nonEmptyString(payload[key])
 				if (value) return value
 			}
@@ -1792,7 +1792,7 @@ export abstract class CommerceService {
 	}
 
 	private static buildWebhookExternalId(payload: Record<string, unknown>) {
-		const candidates = this.extractWebhookReferenceCandidates(payload)
+		const candidates = CommerceService.extractWebhookReferenceCandidates(payload)
 		if (candidates.length > 0) {
 			return candidates[0]
 		}
@@ -1896,13 +1896,13 @@ export abstract class CommerceService {
 				},
 			})
 
-			await this.finalizeReservedStock(tx, {
+			await CommerceService.finalizeReservedStock(tx, {
 				appId: args.appId,
 				orderId: args.orderId,
 			})
 
 			const stageSync = order.conversation_id
-				? await this.ensureJourneyStage(tx, {
+				? await CommerceService.ensureJourneyStage(tx, {
 						conversationId: order.conversation_id,
 						appId: args.appId,
 						journeyPhase: 'paid',
@@ -1910,7 +1910,7 @@ export abstract class CommerceService {
 				: null
 
 			if (order.conversation_id) {
-				await this.logConversationAction(tx, {
+				await CommerceService.logConversationAction(tx, {
 					conversationId: order.conversation_id,
 					action: 'order.paid',
 					targetId: args.orderId,
@@ -1930,7 +1930,7 @@ export abstract class CommerceService {
 				is_vip: boolean
 			} | null = null
 			if (order.contact_id) {
-				vipStats = await this.ensureVipTag({
+				vipStats = await CommerceService.ensureVipTag({
 					db: tx,
 					appId: args.appId,
 					contactId: order.contact_id,
@@ -1946,7 +1946,7 @@ export abstract class CommerceService {
 		})
 
 		if (outcome.already_paid) {
-			await this.sendPakasirPaymentSuccessNotification({
+			await CommerceService.sendPakasirPaymentSuccessNotification({
 				appId: outcome.order.app_id || args.appId,
 				orderId: args.orderId,
 				invoiceId: args.invoiceId,
@@ -1959,7 +1959,7 @@ export abstract class CommerceService {
 			return outcome
 		}
 
-		await this.dispatchStageChanges((outcome as any).stageSync || null)
+		await CommerceService.dispatchStageChanges((outcome as any).stageSync || null)
 
 		void BusinessWebhookDispatchService.dispatch({
 			event: 'order.paid',
@@ -1975,13 +1975,13 @@ export abstract class CommerceService {
 			},
 		})
 		const paidEventAppId = outcome.order.app_id || args.appId
-		await this.refreshDecisionFromCommerceEvent({
+		await CommerceService.refreshDecisionFromCommerceEvent({
 			appId: paidEventAppId,
 			conversationId: outcome.order.conversation_id,
 			event: 'order.paid',
 		})
 
-		await this.sendPakasirPaymentSuccessNotification({
+		await CommerceService.sendPakasirPaymentSuccessNotification({
 			appId: paidEventAppId,
 			orderId: args.orderId,
 			invoiceId: args.invoiceId,
@@ -2197,7 +2197,7 @@ export abstract class CommerceService {
 		)
 		const orderNumber = toBigIntNumber(order.order_number)
 		const contactName = nonEmptyString(conversation.contacts?.name)
-		const fallbackText = this.buildPaymentSuccessFallbackText({
+		const fallbackText = CommerceService.buildPaymentSuccessFallbackText({
 			contactName,
 			orderNumber,
 			orderId: order.id,
@@ -2206,7 +2206,7 @@ export abstract class CommerceService {
 
 		let content = fallbackText
 		let aiMeta: Record<string, unknown> = {}
-		const agentId = await this.resolvePaymentSuccessAgentId({
+		const agentId = await CommerceService.resolvePaymentSuccessAgentId({
 			appId: args.appId,
 			contactId: conversation.contact_id || order.contact_id,
 			conversation,
@@ -2218,7 +2218,7 @@ export abstract class CommerceService {
 					agentId,
 					args.appId,
 					{
-						message: this.buildPaymentSuccessAgentPrompt({
+						message: CommerceService.buildPaymentSuccessAgentPrompt({
 							contactName,
 							orderNumber,
 							orderId: order.id,
@@ -2337,7 +2337,7 @@ export abstract class CommerceService {
 		const appId = order?.app_id || args.appId || null
 		if (!appId || !order?.id || !resolvedInvoice?.id) return null
 
-		return this.sendPakasirPaymentSuccessNotification({
+		return CommerceService.sendPakasirPaymentSuccessNotification({
 			appId,
 			orderId: order.id,
 			invoiceId: resolvedInvoice.id,
@@ -2387,7 +2387,7 @@ export abstract class CommerceService {
 			payment_status?: unknown
 		},
 	) {
-		const resolvedAppId = this.ensureValidAppId(appId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
 		const page = Math.max(1, parsePositiveInt(input.page, DEFAULT_LIST_PAGE))
 		const limit = Math.min(
 			MAX_LIST_LIMIT,
@@ -2424,7 +2424,7 @@ export abstract class CommerceService {
 		}
 
 		if (paymentStatuses.length > 0) {
-			const orderIds = await this.getLatestInvoiceOrderIdsByStatus(
+			const orderIds = await CommerceService.getLatestInvoiceOrderIdsByStatus(
 				resolvedAppId,
 				paymentStatuses,
 			)
@@ -2692,7 +2692,7 @@ export abstract class CommerceService {
 	}
 
 	static async getOrderDetail(appId: string, orderId: string) {
-		const resolvedAppId = this.ensureValidAppId(appId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
 		if (!isUuid(orderId)) throw new Error('Invalid order ID')
 
 		const detail = await findOrderWithItemsAndInvoices(orderId, resolvedAppId)
@@ -2720,7 +2720,7 @@ export abstract class CommerceService {
 						},
 					})
 				: Promise.resolve(null),
-			this.resolvePakasirConfig(resolvedAppId),
+			CommerceService.resolvePakasirConfig(resolvedAppId),
 		])
 
 		const inbox = conversation?.inbox_id
@@ -2753,7 +2753,7 @@ export abstract class CommerceService {
 	}
 
 	static async listProducts(appId: string) {
-		const resolvedAppId = this.ensureValidAppId(appId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
 		const [products, pakasirConfig] = await Promise.all([
 			prisma.products.findMany({
 				where: {
@@ -2762,7 +2762,7 @@ export abstract class CommerceService {
 				},
 				orderBy: [{ updated_at: 'desc' }, { created_at: 'desc' }],
 			}),
-			this.resolvePakasirConfig(resolvedAppId),
+			CommerceService.resolvePakasirConfig(resolvedAppId),
 		])
 
 		const productIds = products.map((product) => product.id)
@@ -2835,7 +2835,7 @@ export abstract class CommerceService {
 			metadata?: Record<string, unknown>
 		},
 	) {
-		const resolvedAppId = this.ensureValidAppId(appId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
 		const name = String(input.name || '').trim()
 		if (!name) {
 			throw new Error('Product name is required')
@@ -2881,7 +2881,7 @@ export abstract class CommerceService {
 			is_active?: boolean
 		},
 	) {
-		const resolvedAppId = this.ensureValidAppId(appId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
 		if (!isUuid(productId)) {
 			throw new Error('Invalid product ID')
 		}
@@ -2968,7 +2968,7 @@ export abstract class CommerceService {
 			deactivate_variant_ids?: unknown
 		},
 	) {
-		const resolvedAppId = this.ensureValidAppId(appId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
 		if (!isUuid(productId)) {
 			throw new Error('Invalid product ID')
 		}
@@ -3183,37 +3183,37 @@ export abstract class CommerceService {
 		productId: string,
 		input: Record<string, unknown>,
 	) {
-		const resolvedAppId = this.ensureValidAppId(appId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
 		if (!isUuid(productId)) throw new Error('Invalid product ID')
 
 		const updateData: Prisma.productsUpdateInput = {
 			updated_at: new Date(),
 		}
 
-		if (Object.prototype.hasOwnProperty.call(input, 'name')) {
+		if (Object.hasOwn(input, 'name')) {
 			const name = String(input.name || '').trim()
 			if (!name) throw new Error('Product name cannot be empty')
 			updateData.name = name
 		}
-		if (Object.prototype.hasOwnProperty.call(input, 'sku')) {
+		if (Object.hasOwn(input, 'sku')) {
 			updateData.sku = nonEmptyString(input.sku)
 		}
-		if (Object.prototype.hasOwnProperty.call(input, 'image_url')) {
+		if (Object.hasOwn(input, 'image_url')) {
 			updateData.image_url = nonEmptyString(input.image_url)
 		}
-		if (Object.prototype.hasOwnProperty.call(input, 'description')) {
+		if (Object.hasOwn(input, 'description')) {
 			updateData.description = nonEmptyString(input.description)
 		}
 		if (
-			Object.prototype.hasOwnProperty.call(input, 'base_price') ||
-			Object.prototype.hasOwnProperty.call(input, 'price')
+			Object.hasOwn(input, 'base_price') ||
+			Object.hasOwn(input, 'price')
 		) {
 			updateData.base_price = toNumber(input.base_price || input.price)
 		}
-		if (Object.prototype.hasOwnProperty.call(input, 'is_active')) {
+		if (Object.hasOwn(input, 'is_active')) {
 			updateData.is_active = Boolean(input.is_active)
 		}
-		if (Object.prototype.hasOwnProperty.call(input, 'metadata')) {
+		if (Object.hasOwn(input, 'metadata')) {
 			updateData.metadata = toJsonInput(parseJson(input.metadata))
 		}
 
@@ -3242,7 +3242,7 @@ export abstract class CommerceService {
 	}
 
 	static async deactivateProduct(appId: string, productId: string) {
-		const resolvedAppId = this.ensureValidAppId(appId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
 		if (!isUuid(productId)) throw new Error('Invalid product ID')
 
 		const updated = await prisma.$transaction(async (tx) => {
@@ -3288,31 +3288,31 @@ export abstract class CommerceService {
 		variantId: string,
 		input: Record<string, unknown>,
 	) {
-		const resolvedAppId = this.ensureValidAppId(appId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
 		if (!isUuid(variantId)) throw new Error('Invalid variant ID')
 
 		const updateData: Prisma.product_variantsUpdateInput = {
 			updated_at: new Date(),
 		}
 
-		if (Object.prototype.hasOwnProperty.call(input, 'name')) {
+		if (Object.hasOwn(input, 'name')) {
 			const name = String(input.name || '').trim()
 			if (!name) throw new Error('Variant name cannot be empty')
 			updateData.name = name
 		}
-		if (Object.prototype.hasOwnProperty.call(input, 'sku')) {
+		if (Object.hasOwn(input, 'sku')) {
 			updateData.sku = nonEmptyString(input.sku)
 		}
-		if (Object.prototype.hasOwnProperty.call(input, 'image_url')) {
+		if (Object.hasOwn(input, 'image_url')) {
 			updateData.image_url = nonEmptyString(input.image_url)
 		}
-		if (Object.prototype.hasOwnProperty.call(input, 'attributes')) {
+		if (Object.hasOwn(input, 'attributes')) {
 			updateData.attributes = toJsonInput(parseJson(input.attributes))
 		}
-		if (Object.prototype.hasOwnProperty.call(input, 'price')) {
+		if (Object.hasOwn(input, 'price')) {
 			updateData.price = toNumber(input.price)
 		}
-		if (Object.prototype.hasOwnProperty.call(input, 'is_active')) {
+		if (Object.hasOwn(input, 'is_active')) {
 			updateData.is_active = Boolean(input.is_active)
 		}
 
@@ -3348,7 +3348,7 @@ export abstract class CommerceService {
 	}
 
 	static async deactivateVariant(appId: string, variantId: string) {
-		const resolvedAppId = this.ensureValidAppId(appId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
 		if (!isUuid(variantId)) throw new Error('Invalid variant ID')
 
 		const variant = await prisma.product_variants.updateManyAndReturn({
@@ -3381,7 +3381,7 @@ export abstract class CommerceService {
 			include_inactive?: unknown
 		},
 	) {
-		const resolvedAppId = this.ensureValidAppId(appId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
 		const page = Math.max(1, parsePositiveInt(input.page, DEFAULT_LIST_PAGE))
 		const limit = Math.min(
 			MAX_LIST_LIMIT,
@@ -3500,7 +3500,7 @@ export abstract class CommerceService {
 			movement_type?: unknown
 		},
 	) {
-		const resolvedAppId = this.ensureValidAppId(appId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
 		const page = Math.max(1, parsePositiveInt(input.page, DEFAULT_LIST_PAGE))
 		const limit = Math.min(
 			MAX_LIST_LIMIT,
@@ -3656,7 +3656,7 @@ export abstract class CommerceService {
 			movement_type?: string
 		},
 	) {
-		const resolvedAppId = this.ensureValidAppId(appId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
 		if (!isUuid(variantId)) throw new Error('Invalid variant ID')
 
 		const quantity = Math.trunc(toNumber(input.quantity))
@@ -3736,7 +3736,7 @@ export abstract class CommerceService {
 		input: AddToCartInput,
 		actorId?: string | null,
 	) {
-		const resolvedAppId = this.ensureValidAppId(appId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
 		if (!isUuid(input.conversation_id)) {
 			throw new Error('Invalid conversation_id')
 		}
@@ -3758,7 +3758,7 @@ export abstract class CommerceService {
 		}
 
 		const outcome = await prisma.$transaction(async (tx) => {
-			const conversation = await this.ensureConversationOwned(
+			const conversation = await CommerceService.ensureConversationOwned(
 				tx,
 				input.conversation_id,
 				resolvedAppId,
@@ -3930,7 +3930,7 @@ export abstract class CommerceService {
 				}
 			}
 
-			await this.recalculateOrderTotals(tx, order.id)
+			await CommerceService.recalculateOrderTotals(tx, order.id)
 
 			const updatedOrder = await tx.orders.update({
 				where: { id: order.id },
@@ -3947,14 +3947,14 @@ export abstract class CommerceService {
 				},
 			})
 
-			const stageSync = await this.ensureJourneyStage(tx, {
+			const stageSync = await CommerceService.ensureJourneyStage(tx, {
 				conversationId: conversation.id,
 				appId: resolvedAppId,
 				journeyPhase: 'cart',
 				actorId,
 			})
 
-			await this.logConversationAction(tx, {
+			await CommerceService.logConversationAction(tx, {
 				conversationId: conversation.id,
 				action: 'order.add_to_cart',
 				actorId,
@@ -3971,7 +3971,7 @@ export abstract class CommerceService {
 			}
 		})
 
-		await this.dispatchStageChanges(outcome.stageSync, actorId)
+		await CommerceService.dispatchStageChanges(outcome.stageSync, actorId)
 
 		void BusinessWebhookDispatchService.dispatch({
 			event: 'order.add_to_cart',
@@ -3982,7 +3982,7 @@ export abstract class CommerceService {
 				items: normalizedItems,
 			},
 		})
-		await this.refreshDecisionFromCommerceEvent({
+		await CommerceService.refreshDecisionFromCommerceEvent({
 			appId: resolvedAppId,
 			conversationId: input.conversation_id,
 			event: 'order.add_to_cart',
@@ -4005,11 +4005,11 @@ export abstract class CommerceService {
 		input: CheckoutInput,
 		actorId?: string | null,
 	) {
-		const resolvedAppId = this.ensureValidAppId(appId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
 		if (!isUuid(orderId)) {
 			throw new Error('Invalid order ID')
 		}
-		const pakasirConfig = await this.resolvePakasirConfig(resolvedAppId)
+		const pakasirConfig = await CommerceService.resolvePakasirConfig(resolvedAppId)
 
 		const expiresInMinutes = Math.max(
 			5,
@@ -4055,20 +4055,20 @@ export abstract class CommerceService {
 				throw new Error('Cannot checkout an empty cart')
 			}
 
-			await this.releaseActiveReservations(tx, {
+			await CommerceService.releaseActiveReservations(tx, {
 				appId: resolvedAppId,
 				orderId: order.id,
 				reason: 'checkout-refresh',
 			})
 
-			await this.reserveStockForOrder(tx, {
+			await CommerceService.reserveStockForOrder(tx, {
 				appId: resolvedAppId,
 				orderId: order.id,
 				orderItems,
 				expiresInMinutes,
 			})
 
-			await this.recalculateOrderTotals(tx, order.id)
+			await CommerceService.recalculateOrderTotals(tx, order.id)
 
 			const updatedOrder = await tx.orders.update({
 				where: { id: order.id },
@@ -4126,7 +4126,7 @@ export abstract class CommerceService {
 			}
 
 			const stageSync = updatedOrder.conversation_id
-				? await this.ensureJourneyStage(tx, {
+				? await CommerceService.ensureJourneyStage(tx, {
 						conversationId: updatedOrder.conversation_id,
 						appId: resolvedAppId,
 						journeyPhase: 'checkout',
@@ -4134,7 +4134,7 @@ export abstract class CommerceService {
 					})
 				: null
 
-			await this.logConversationAction(tx, {
+			await CommerceService.logConversationAction(tx, {
 				conversationId: updatedOrder.conversation_id,
 				action: 'order.checkout',
 				actorId,
@@ -4153,7 +4153,7 @@ export abstract class CommerceService {
 			}
 		})
 
-		await this.dispatchStageChanges(result.stageSync, actorId)
+		await CommerceService.dispatchStageChanges(result.stageSync, actorId)
 
 		void BusinessWebhookDispatchService.dispatch({
 			event: 'order.checkout',
@@ -4164,7 +4164,7 @@ export abstract class CommerceService {
 				payment_method: paymentMethod,
 			},
 		})
-		await this.refreshDecisionFromCommerceEvent({
+		await CommerceService.refreshDecisionFromCommerceEvent({
 			appId: resolvedAppId,
 			conversationId: result.conversationId,
 			event: 'order.checkout',
@@ -4188,9 +4188,9 @@ export abstract class CommerceService {
 		input: SendPaymentLinkInput,
 		actorId?: string | null,
 	) {
-		const resolvedAppId = this.ensureValidAppId(appId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
 		if (!isUuid(orderId)) throw new Error('Invalid order ID')
-		const pakasirConfig = await this.resolvePakasirConfig(resolvedAppId)
+		const pakasirConfig = await CommerceService.resolvePakasirConfig(resolvedAppId)
 
 		if (!PakasirClient.isConfigured(toPakasirClientConfig(pakasirConfig))) {
 			throw new Error(
@@ -4352,7 +4352,7 @@ export abstract class CommerceService {
 			})
 
 			const stageSync = updatedOrder.conversation_id
-				? await this.ensureJourneyStage(tx, {
+				? await CommerceService.ensureJourneyStage(tx, {
 						conversationId: updatedOrder.conversation_id,
 						appId: resolvedAppId,
 						journeyPhase: 'payment_pending',
@@ -4360,7 +4360,7 @@ export abstract class CommerceService {
 					})
 				: null
 
-			await this.logConversationAction(tx, {
+			await CommerceService.logConversationAction(tx, {
 				conversationId: updatedOrder.conversation_id,
 				action: 'order.payment_link_sent',
 				actorId,
@@ -4381,7 +4381,7 @@ export abstract class CommerceService {
 			}
 		})
 
-		await this.dispatchStageChanges(updated.stageSync, actorId)
+		await CommerceService.dispatchStageChanges(updated.stageSync, actorId)
 
 		if (updated.conversationId && paymentLink) {
 			const templateText = nonEmptyString(input.message_template)
@@ -4414,7 +4414,7 @@ export abstract class CommerceService {
 				payment_link: paymentLink,
 			},
 		})
-		await this.refreshDecisionFromCommerceEvent({
+		await CommerceService.refreshDecisionFromCommerceEvent({
 			appId: resolvedAppId,
 			conversationId: updated.conversationId,
 			event: 'order.payment_link_sent',
@@ -4439,9 +4439,9 @@ export abstract class CommerceService {
 		input: CancelOrderInput,
 		actorId?: string | null,
 	) {
-		const resolvedAppId = this.ensureValidAppId(appId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
 		if (!isUuid(orderId)) throw new Error('Invalid order ID')
-		const pakasirConfig = await this.resolvePakasirConfig(resolvedAppId)
+		const pakasirConfig = await CommerceService.resolvePakasirConfig(resolvedAppId)
 
 		const orderData = await findOrderWithItemsAndInvoices(
 			orderId,
@@ -4474,7 +4474,7 @@ export abstract class CommerceService {
 		}
 
 		const updated = await prisma.$transaction(async (tx) => {
-			await this.releaseActiveReservations(tx, {
+			await CommerceService.releaseActiveReservations(tx, {
 				appId: resolvedAppId,
 				orderId,
 				reason: input.reason || 'cancelled',
@@ -4503,7 +4503,7 @@ export abstract class CommerceService {
 				})
 			}
 
-			await this.logConversationAction(tx, {
+			await CommerceService.logConversationAction(tx, {
 				conversationId: order.conversation_id,
 				action: 'order.cancelled',
 				actorId,
@@ -4529,7 +4529,7 @@ export abstract class CommerceService {
 				provider_invoice_id: providerId,
 			},
 		})
-		await this.refreshDecisionFromCommerceEvent({
+		await CommerceService.refreshDecisionFromCommerceEvent({
 			appId: resolvedAppId,
 			conversationId: updated.conversationId,
 			event: 'order.cancelled',
@@ -4567,14 +4567,14 @@ export abstract class CommerceService {
 	}
 
 	static async getConversationSummary(appId: string, conversationId: string) {
-		const resolvedAppId = this.ensureValidAppId(appId)
+		const resolvedAppId = CommerceService.ensureValidAppId(appId)
 		if (!isUuid(conversationId)) {
 			throw new Error('Invalid conversation ID')
 		}
 
 		const [summary, pakasirConfig] = await Promise.all([
-			this.buildSummaryData(resolvedAppId, conversationId),
-			this.resolvePakasirConfig(resolvedAppId),
+			CommerceService.buildSummaryData(resolvedAppId, conversationId),
+			CommerceService.resolvePakasirConfig(resolvedAppId),
 		])
 		if (!summary.conversation) {
 			throw new Error('Conversation not found')
@@ -4656,7 +4656,7 @@ export abstract class CommerceService {
 					})
 				: Promise.resolve(null),
 			order.app_id
-				? this.resolvePakasirConfig(order.app_id)
+				? CommerceService.resolvePakasirConfig(order.app_id)
 				: Promise.resolve(null),
 		])
 
@@ -4739,7 +4739,7 @@ export abstract class CommerceService {
 			return null
 		}
 
-		return this.buildPublicInvoicePayload(invoice)
+		return CommerceService.buildPublicInvoicePayload(invoice)
 	}
 
 	static async getPublicPaymentSuccessDetail(input: {
@@ -4753,7 +4753,7 @@ export abstract class CommerceService {
 	}) {
 		const token = nonEmptyString(input.token)
 		if (token) {
-			return this.getPublicInvoiceByToken(token)
+			return CommerceService.getPublicInvoiceByToken(token)
 		}
 
 		const orderId = nonEmptyString(input.order_id || input.orderId)
@@ -4795,7 +4795,7 @@ export abstract class CommerceService {
 			return null
 		}
 
-		return this.buildPublicInvoicePayload(invoice)
+		return CommerceService.buildPublicInvoicePayload(invoice)
 	}
 
 	static async handlePakasirWebhook(args: {
@@ -4803,8 +4803,8 @@ export abstract class CommerceService {
 		headers?: Record<string, unknown>
 	}) {
 		const payload = args.payload || {}
-		const externalId = this.buildWebhookExternalId(payload)
-		const referenceCandidates = this.extractWebhookReferenceCandidates(payload)
+		const externalId = CommerceService.buildWebhookExternalId(payload)
+		const referenceCandidates = CommerceService.extractWebhookReferenceCandidates(payload)
 		const eventType = String(
 			payload.event || payload.type || 'transaction.update',
 		)
@@ -4822,7 +4822,7 @@ export abstract class CommerceService {
 
 		if (existingEvent?.status === 'processed') {
 			if (statusCandidate === 'PAID') {
-				await this.sendPakasirPaymentSuccessNotificationFromReferences({
+				await CommerceService.sendPakasirPaymentSuccessNotificationFromReferences({
 					referenceCandidates,
 					appId: existingEvent.app_id,
 				}).catch((error) => {
@@ -4941,7 +4941,7 @@ export abstract class CommerceService {
 					})
 				}
 				const fallbackPakasirConfig = reloadedOrder?.app_id
-					? await this.resolvePakasirConfig(reloadedOrder.app_id)
+					? await CommerceService.resolvePakasirConfig(reloadedOrder.app_id)
 					: null
 				const verified = await PakasirClient.getTransactionDetail(
 					updatedInvoice.provider_invoice_id || referenceCandidates[0],
@@ -4956,7 +4956,7 @@ export abstract class CommerceService {
 					if (!reloadedOrder?.app_id) {
 						throw new Error('Unable to resolve app context for paid webhook')
 					}
-					await this.markOrderPaidFromPakasir({
+					await CommerceService.markOrderPaidFromPakasir({
 						appId: reloadedOrder.app_id,
 						orderId: updatedInvoice.order_id,
 						invoiceId: updatedInvoice.id,
@@ -5001,7 +5001,7 @@ export abstract class CommerceService {
 			invoice.provider_invoice_id ||
 			order.external_order_id ||
 			referenceCandidates[0]
-		const pakasirConfig = await this.resolvePakasirConfig(orderAppId)
+		const pakasirConfig = await CommerceService.resolvePakasirConfig(orderAppId)
 		const verified = await PakasirClient.getTransactionDetail(
 			verificationRef,
 			toPakasirClientConfig(pakasirConfig),
@@ -5011,7 +5011,7 @@ export abstract class CommerceService {
 		)
 
 		if (normalizedStatus === 'PAID') {
-			await this.markOrderPaidFromPakasir({
+			await CommerceService.markOrderPaidFromPakasir({
 				appId: orderAppId,
 				orderId: order.id,
 				invoiceId: invoice.id,
@@ -5037,7 +5037,7 @@ export abstract class CommerceService {
 					},
 				})
 
-				await this.releaseActiveReservations(tx, {
+				await CommerceService.releaseActiveReservations(tx, {
 					appId: orderAppId,
 					orderId: order.id,
 					reason: normalizedStatus.toLowerCase(),
@@ -5060,7 +5060,7 @@ export abstract class CommerceService {
 					},
 				})
 
-				await this.logConversationAction(tx, {
+				await CommerceService.logConversationAction(tx, {
 					conversationId: order.conversation_id,
 					action:
 						normalizedStatus === 'EXPIRED'

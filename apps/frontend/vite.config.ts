@@ -35,7 +35,7 @@ export default defineConfig({
 		include: ['react', 'react-dom'],
 		force: forceOptimizeDeps,
 	},
-	// @ts-expect-error
+	// @ts-ignore
 	plugins: [
 		devtools(),
 		nitro({

@@ -647,7 +647,7 @@ export abstract class WhatsAppService {
 		providerChannelKey: string,
 		secret: string,
 	) {
-		const channel = await this.getBaileysChannelByProviderKey(providerChannelKey)
+		const channel = await WhatsAppService.getBaileysChannelByProviderKey(providerChannelKey)
 		if (!channel) return null
 
 		const normalizedSecret = String(secret || '').trim()
@@ -696,7 +696,7 @@ export abstract class WhatsAppService {
 		if (!existingChannel) return null
 
 		const hasKey = (key: string) =>
-			Object.prototype.hasOwnProperty.call(data || {}, key)
+			Object.hasOwn(data || {}, key)
 
 		const existingMetadata = asRecord(existingChannel.extended_metadata)
 		const metadataUpdate: Record<string, unknown> = { ...existingMetadata }

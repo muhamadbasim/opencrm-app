@@ -65,13 +65,13 @@ export abstract class InboxService {
 			channelConfig.default_chatbot_id || channelConfig.defaultChatbotId,
 		)
 		const chatbotFromPayload = asUuidOrNull(data?.chatbot_id)
-		const hasChatbotIdInPayload = Object.prototype.hasOwnProperty.call(
+		const hasChatbotIdInPayload = Object.hasOwn(
 			data || {},
 			'chatbot_id',
 		)
 		const hasChatbotIdInChannelConfig =
-			Object.prototype.hasOwnProperty.call(channelConfig, 'default_chatbot_id') ||
-			Object.prototype.hasOwnProperty.call(channelConfig, 'defaultChatbotId')
+			Object.hasOwn(channelConfig, 'default_chatbot_id') ||
+			Object.hasOwn(channelConfig, 'defaultChatbotId')
 
 		if (hasChatbotIdInPayload || hasChatbotIdInChannelConfig) {
 			payload.chatbot_id = chatbotFromPayload ?? chatbotFromConfig ?? null

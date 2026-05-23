@@ -512,7 +512,7 @@ function ProductsPage() {
 		setCatalogVariantPageByProductId((prev) => {
 			if (
 				safePage === 1 &&
-				!Object.prototype.hasOwnProperty.call(prev, productId)
+				!Object.hasOwn(prev, productId)
 			) {
 				return prev
 			}

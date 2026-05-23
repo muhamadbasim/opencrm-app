@@ -717,7 +717,7 @@ export abstract class ConversationService {
 			if (analytics?.workflow_id) workflowIds.add(analytics.workflow_id)
 		}
 
-		const workflowNameById = await this.getWorkflowNameMap(
+		const workflowNameById = await ConversationService.getWorkflowNameMap(
 			[...workflowIds],
 			targetAppId,
 		)
@@ -820,7 +820,7 @@ export abstract class ConversationService {
 		const derivedAnalytics = deriveAiAnalyticsFromConversation({
 			conversation: conversation as unknown as Record<string, unknown>,
 		})
-		const workflowNameById = await this.getWorkflowNameMap(
+		const workflowNameById = await ConversationService.getWorkflowNameMap(
 			derivedAnalytics?.workflow_id ? [derivedAnalytics.workflow_id] : [],
 			targetAppId,
 		)
@@ -1123,7 +1123,7 @@ export abstract class ConversationService {
 		const targetAppId = await resolveAppId(accountId)
 		if (!targetAppId) return null
 
-		const conversation = await this.getConversationById(
+		const conversation = await ConversationService.getConversationById(
 			conversationId,
 			targetAppId,
 			viewerUserId,

@@ -1164,7 +1164,7 @@ function readRuntimeValue(
 	const normalized = key.trim()
 	if (!normalized) return null
 
-	if (Object.prototype.hasOwnProperty.call(variables, normalized)) {
+	if (Object.hasOwn(variables, normalized)) {
 		return variables[normalized]
 	}
 
@@ -1179,7 +1179,7 @@ function readRuntimeValue(
 		if (!cursor || typeof cursor !== 'object' || Array.isArray(cursor))
 			return null
 		const row = cursor as Record<string, unknown>
-		if (!Object.prototype.hasOwnProperty.call(row, part)) return null
+		if (!Object.hasOwn(row, part)) return null
 		cursor = row[part]
 	}
 	return cursor
@@ -2395,7 +2395,7 @@ function interpolateTemplate(
 		if (key === 'message.content') {
 			return context.incomingText
 		}
-		if (Object.prototype.hasOwnProperty.call(context.state.variables, key)) {
+		if (Object.hasOwn(context.state.variables, key)) {
 			const value = context.state.variables[key]
 			if (value === null || value === undefined) return ''
 			return String(value)
@@ -2576,7 +2576,7 @@ function parseAiClassificationLabel(
 	const normalizeCandidate = (value: string) =>
 		normalizeText(value)
 			.replace(/^[`"'“”'.,:;\-\s]+|[`"'“”'.,:;\-\s]+$/g, '')
-			.replace(/^(label|intent|kategori|category)\s*[:=\-]\s*/i, '')
+			.replace(/^(label|intent|kategori|category)\s*[:=-]\s*/i, '')
 			.trim()
 	const candidates = [
 		raw,
@@ -3105,7 +3105,7 @@ export abstract class FlowRuntimeService {
 		context: RuntimeContext,
 		message: string,
 	): string {
-		const personaSection = this.buildCustomerLevelPersonaPromptSection(context)
+		const personaSection = FlowRuntimeService.buildCustomerLevelPersonaPromptSection(context)
 		if (!personaSection) return message
 		return `${personaSection}\n\n${message}`
 	}
@@ -3132,7 +3132,7 @@ export abstract class FlowRuntimeService {
 			'Jika informasi workflow berupa daftar, pertahankan semua item dan urutannya.',
 			'Jika ada link pembayaran atau QRIS, tulis link tersebut persis tanpa diubah.',
 			'Jika datanya belum cukup, minta satu klarifikasi paling penting dengan gaya persona.',
-			this.buildCustomerLevelPersonaPromptSection(context),
+			FlowRuntimeService.buildCustomerLevelPersonaPromptSection(context),
 			customerLevel ? `Customer level: ${customerLevel}` : '',
 			`Jenis informasi workflow: ${event}`,
 			`Pesan customer saat ini: ${context.incomingText || '-'}`,
@@ -3206,17 +3206,17 @@ export abstract class FlowRuntimeService {
 	): Promise<string | null> {
 		const normalized = text.trim()
 		if (!normalized) return null
-		if (!this.shouldElaborateWorkflowFinalText(contentAttributes)) {
-			return this.sendBotText(context, normalized, contentAttributes)
+		if (!FlowRuntimeService.shouldElaborateWorkflowFinalText(contentAttributes)) {
+			return FlowRuntimeService.sendBotText(context, normalized, contentAttributes)
 		}
 
 		try {
-			const response = await this.executeWithPreferredChatbot(
+			const response = await FlowRuntimeService.executeWithPreferredChatbot(
 				context,
 				{},
 				(chatbotId) =>
 					ChatbotService.generateAgentReply(chatbotId, context.appId, {
-						message: this.buildWorkflowFinalElaborationPrompt(
+						message: FlowRuntimeService.buildWorkflowFinalElaborationPrompt(
 							context,
 							normalized,
 							contentAttributes,
@@ -3234,15 +3234,15 @@ export abstract class FlowRuntimeService {
 					}),
 			)
 			const responseMeta = asRecord(response.meta)
-			const generatedText = this.extractTextFromAiResponse(response)
+			const generatedText = FlowRuntimeService.extractTextFromAiResponse(response)
 			const providerHit = Boolean(responseMeta.ai_provider_hit)
 			if (
 				providerHit &&
 				generatedText &&
-				!this.hasInternalPromptLeak(generatedText) &&
-				this.preservesRequiredUrls(normalized, generatedText)
+				!FlowRuntimeService.hasInternalPromptLeak(generatedText) &&
+				FlowRuntimeService.preservesRequiredUrls(normalized, generatedText)
 			) {
-				const sentId = await this.sendBotText(context, generatedText, {
+				const sentId = await FlowRuntimeService.sendBotText(context, generatedText, {
 					...contentAttributes,
 					ai_generated: true,
 					ai_elaborated_from_workflow: true,
@@ -3287,7 +3287,7 @@ export abstract class FlowRuntimeService {
 			).slice(0, 320)
 		}
 
-		return this.sendBotText(context, normalized, {
+		return FlowRuntimeService.sendBotText(context, normalized, {
 			...contentAttributes,
 			ai_elaboration_fallback: true,
 		})
@@ -3317,14 +3317,14 @@ export abstract class FlowRuntimeService {
 			handover
 				? 'Balasan harus menginformasikan bahwa chat diteruskan ke tim CS manusia.'
 				: 'Balasan harus menjawab kebutuhan customer secara akurat, lengkap, dan actionable.',
-			this.buildCustomerLevelPersonaPromptSection(context),
+			FlowRuntimeService.buildCustomerLevelPersonaPromptSection(context),
 			'Jika data tidak cukup, jujur dan minta 1 klarifikasi paling penting.',
 			styleHint ? `Gaya/arah pesan yang diinginkan: ${styleHint}` : '',
 			`Customer message: ${context.incomingText || '-'}`,
 			'Workflow execution summary:',
-			this.buildExecutionSummaryForPrompt(context),
+			FlowRuntimeService.buildExecutionSummaryForPrompt(context),
 			'Runtime variables snapshot (JSON):',
-			this.buildRuntimeVariableSnapshotForPrompt(context),
+			FlowRuntimeService.buildRuntimeVariableSnapshotForPrompt(context),
 			'Balasan final ke customer:',
 		]
 			.filter((line) => line.trim().length > 0)
@@ -3366,7 +3366,7 @@ export abstract class FlowRuntimeService {
 			readRuntimeString(context.state.variables, 'payment.link') ||
 			readRuntimeString(context.state.variables, 'qris.link')
 		if (paymentLink) {
-			await this.sendPaymentLinkCta(context, paymentLink, {
+			await FlowRuntimeService.sendPaymentLinkCta(context, paymentLink, {
 				event: 'flow_payment_link',
 				terminal_node_id: options?.terminalNodeId || null,
 				skip_ai_elaboration: true,
@@ -3375,20 +3375,20 @@ export abstract class FlowRuntimeService {
 		}
 
 		const nodeData = options?.nodeData || {}
-		const orchestrationPrompt = this.buildTerminalOrchestrationPrompt(context, {
+		const orchestrationPrompt = FlowRuntimeService.buildTerminalOrchestrationPrompt(context, {
 			handover: options?.handover === true,
 			nodeData,
 		})
 
 		try {
-			await this.executeWithPreferredChatbot(context, nodeData, (chatbotId) =>
-				this.generateReplyWithChatbot(
+			await FlowRuntimeService.executeWithPreferredChatbot(context, nodeData, (chatbotId) =>
+				FlowRuntimeService.generateReplyWithChatbot(
 					context,
 					chatbotId,
 					orchestrationPrompt,
 					false,
 					context.allowAllRag,
-					this.shouldSkipRagForTerminalReply(context),
+					FlowRuntimeService.shouldSkipRagForTerminalReply(context),
 				),
 			)
 			if (context.execution.sentMessageIds.length > 0) return
@@ -3396,9 +3396,9 @@ export abstract class FlowRuntimeService {
 			// Fall back to deterministic terminal message below.
 		}
 
-		await this.sendWorkflowFinalText(
+		await FlowRuntimeService.sendWorkflowFinalText(
 			context,
-			this.buildTerminalFallbackMessage(context, {
+			FlowRuntimeService.buildTerminalFallbackMessage(context, {
 				handover: options?.handover === true,
 			}),
 			{
@@ -3491,7 +3491,7 @@ export abstract class FlowRuntimeService {
 			},
 		})
 		const sentId = asString(message?.id) || null
-		this.trackSentUserMessage(context, sentId, {
+		FlowRuntimeService.trackSentUserMessage(context, sentId, {
 			id: sentId,
 			channel: context.channelType,
 			sender_type: 'bot',
@@ -3515,7 +3515,7 @@ export abstract class FlowRuntimeService {
 
 		const bodyText = 'Silakan lanjut bayar melalui tombol di bawah ini.'
 		if (context.channelType !== 'whatsapp') {
-			return this.sendBotText(
+			return FlowRuntimeService.sendBotText(
 				context,
 				`${bodyText}\n${normalizedLink}`,
 				contentAttributes,
@@ -3549,7 +3549,7 @@ export abstract class FlowRuntimeService {
 			},
 		})
 		const sentId = asString(message?.id) || null
-		this.trackSentUserMessage(context, sentId, {
+		FlowRuntimeService.trackSentUserMessage(context, sentId, {
 			id: sentId,
 			channel: context.channelType,
 			sender_type: 'bot',
@@ -3587,7 +3587,7 @@ export abstract class FlowRuntimeService {
 			},
 		})
 		const sentId = asString(message?.id) || null
-		this.trackSentUserMessage(context, sentId, {
+		FlowRuntimeService.trackSentUserMessage(context, sentId, {
 			id: sentId,
 			channel: context.channelType,
 			sender_type: 'bot',
@@ -3693,7 +3693,7 @@ export abstract class FlowRuntimeService {
 			if (item.type === 'text') {
 				const text = asString(item.content)
 				if (!text) continue
-				const sentId = await this.sendBotText(context, text, {
+				const sentId = await FlowRuntimeService.sendBotText(context, text, {
 					ai_generated: true,
 					ai_source: response.meta.ai_source,
 					ai_agent_id: response.meta.ai_agent_id,
@@ -3709,7 +3709,7 @@ export abstract class FlowRuntimeService {
 			if (item.type === 'image') {
 				const imageUrl = asString(item.url)
 				if (!imageUrl) continue
-				const sentId = await this.sendBotImage(context, imageUrl, null, {
+				const sentId = await FlowRuntimeService.sendBotImage(context, imageUrl, null, {
 					ai_generated: true,
 					ai_source: response.meta.ai_source,
 					ai_agent_id: response.meta.ai_agent_id,
@@ -3727,7 +3727,7 @@ export abstract class FlowRuntimeService {
 		if (!sentSomething) {
 			const fallbackText = asString(response.content)
 			if (fallbackText) {
-				const sentId = await this.sendBotText(context, fallbackText, {
+				const sentId = await FlowRuntimeService.sendBotText(context, fallbackText, {
 					ai_generated: true,
 					ai_source: response.meta.ai_source,
 					ai_agent_id: response.meta.ai_agent_id,
@@ -3983,7 +3983,7 @@ export abstract class FlowRuntimeService {
 			)
 		}
 
-		const selectedAgentId = await this.pickAssigneeByDistribution({
+		const selectedAgentId = await FlowRuntimeService.pickAssigneeByDistribution({
 			appId: context.appId,
 			candidateAgentIds,
 			distributionMethod: context.distributionMethod,
@@ -4166,7 +4166,7 @@ export abstract class FlowRuntimeService {
 				.split(/[\n,;]+/g)
 				.map((item) =>
 					item
-						.replace(/^[\-\*\d\).\s•]+/, '')
+						.replace(/^[-*\d).\s•]+/, '')
 						.replace(/\s+/g, ' ')
 						.trim(),
 				)
@@ -4203,13 +4203,13 @@ export abstract class FlowRuntimeService {
 			}
 
 			const componentMatch = cleaned.match(
-				/(?:program ini terdiri dari|terdiri dari|komposisi(?: treatment)?)\s*[:\-]?\s*(.+?)(?=(?:manfaat|hasil|detail produk|varian tersedia|$))/i,
+				/(?:program ini terdiri dari|terdiri dari|komposisi(?: treatment)?)\s*[:-]?\s*(.+?)(?=(?:manfaat|hasil|detail produk|varian tersedia|$))/i,
 			)
 			const benefitMatch = cleaned.match(
-				/(?:manfaat(?: utamanya)?|benefit)\s*[:\-]?\s*(.+?)(?=(?:hasil|detail produk|varian tersedia|$))/i,
+				/(?:manfaat(?: utamanya)?|benefit)\s*[:-]?\s*(.+?)(?=(?:hasil|detail produk|varian tersedia|$))/i,
 			)
 			const outcomeMatch = cleaned.match(
-				/(?:hasil(?: yang [^:]+)?|outcome)\s*[:\-]?\s*(.+?)(?=(?:detail produk|varian tersedia|$))/i,
+				/(?:hasil(?: yang [^:]+)?|outcome)\s*[:-]?\s*(.+?)(?=(?:detail produk|varian tersedia|$))/i,
 			)
 
 			const sentences = cleaned
@@ -4240,14 +4240,14 @@ export abstract class FlowRuntimeService {
 					benefitMatch
 						? splitListItems(benefitMatch[1] || '')
 						: fallbackBenefits.map((item) =>
-								item.replace(/^hasil\s*[:\-]?\s*/i, ''),
+								item.replace(/^hasil\s*[:-]?\s*/i, ''),
 							),
 				),
 				outcomes: dedupeText(
 					outcomeMatch
 						? splitListItems(outcomeMatch[1] || '')
 						: fallbackOutcomes.map((item) =>
-								item.replace(/^hasil\s*[:\-]?\s*/i, ''),
+								item.replace(/^hasil\s*[:-]?\s*/i, ''),
 							),
 				),
 			}
@@ -4549,7 +4549,7 @@ export abstract class FlowRuntimeService {
 				!hasPreviousProductContext &&
 				(purchaseSignal || isOrderIntentValue(switchValueRaw))
 			) {
-				productSelection = await this.resolveRecentProductSelection(context)
+				productSelection = await FlowRuntimeService.resolveRecentProductSelection(context)
 			}
 			const shouldRouteCheckout =
 				paymentSignal && (hasCheckoutableOrder || Boolean(paymentSelection))
@@ -4816,7 +4816,7 @@ export abstract class FlowRuntimeService {
 					].join('\n')
 
 					try {
-						const aiResponse = await this.executeWithPreferredChatbot(
+						const aiResponse = await FlowRuntimeService.executeWithPreferredChatbot(
 							context,
 							nodeData,
 							(chatbotId) =>
@@ -5019,7 +5019,7 @@ export abstract class FlowRuntimeService {
 					result.ragHit &&
 					result.answer.trim().length > 0
 				) {
-					await this.sendWorkflowFinalText(context, result.answer, {
+					await FlowRuntimeService.sendWorkflowFinalText(context, result.answer, {
 						event: 'rag_retrieve',
 						node_id: node.id,
 					})
@@ -5042,7 +5042,7 @@ export abstract class FlowRuntimeService {
 				''
 			const resolvedText = interpolateTemplate(description, context)
 			if (resolvedText.trim()) {
-				await this.sendWorkflowFinalText(context, resolvedText, {
+				await FlowRuntimeService.sendWorkflowFinalText(context, resolvedText, {
 					event: 'send_message',
 					node_id: node.id,
 				})
@@ -5059,7 +5059,7 @@ export abstract class FlowRuntimeService {
 			}
 
 			for (const image of images) {
-				await this.sendBotImage(context, image.url, image.fileName)
+				await FlowRuntimeService.sendBotImage(context, image.url, image.fileName)
 			}
 
 			return { paused: false, jumpToNodeId: null }
@@ -5117,7 +5117,7 @@ export abstract class FlowRuntimeService {
 					},
 				})
 				const sentId = asString(interactiveMessage?.id) || null
-				this.trackSentUserMessage(context, sentId, {
+				FlowRuntimeService.trackSentUserMessage(context, sentId, {
 					id: sentId,
 					channel: context.channelType,
 					sender_type: 'bot',
@@ -5135,7 +5135,7 @@ export abstract class FlowRuntimeService {
 					.filter((line) => line.trim().length > 0)
 					.join('\n')
 
-				await this.sendBotText(context, fallbackBody, {
+				await FlowRuntimeService.sendBotText(context, fallbackBody, {
 					flow_buttons: options,
 					flow_buttons_mode: 'fallback_text',
 				})
@@ -5253,12 +5253,12 @@ export abstract class FlowRuntimeService {
 			const handoverMessage =
 				asString(nodeData.handoverMessage) || asString(nodeData.messageText)
 			if (handoverMessage) {
-				await this.sendWorkflowFinalText(context, handoverMessage, {
+				await FlowRuntimeService.sendWorkflowFinalText(context, handoverMessage, {
 					event: 'handover_cs',
 					node_id: node.id,
 				})
 			}
-			await this.routeToHumanAgent(context, nodeData, {
+			await FlowRuntimeService.routeToHumanAgent(context, nodeData, {
 				requireApproval: true,
 				reason:
 					asString(nodeData.handoverReason) ||
@@ -5298,7 +5298,7 @@ export abstract class FlowRuntimeService {
 						'Ketik angka daftar atau nama produk lain untuk lihat detail berikutnya.',
 				})
 
-				await this.sendWorkflowFinalText(context, detailMessage, {
+				await FlowRuntimeService.sendWorkflowFinalText(context, detailMessage, {
 					event: 'product_detail',
 					node_id: node.id,
 					source_action: 'list_product',
@@ -5360,7 +5360,7 @@ export abstract class FlowRuntimeService {
 									: Number(product.base_price || 0)
 							return `${index + 1}. ${product.name} (SKU: ${product.sku || '-'}) - Rp${Math.round(price)}`
 						})
-						await this.sendWorkflowFinalText(
+						await FlowRuntimeService.sendWorkflowFinalText(
 							context,
 							`Daftar produk:\n${lines.join('\n')}\n\nKetik angka 1-${sliced.length} atau nama produknya untuk lihat detail.`,
 							{
@@ -5369,7 +5369,7 @@ export abstract class FlowRuntimeService {
 							},
 						)
 					} else {
-						await this.sendWorkflowFinalText(
+						await FlowRuntimeService.sendWorkflowFinalText(
 							context,
 							'Saat ini belum ada produk yang tersedia untuk ditampilkan.',
 							{
@@ -5417,7 +5417,7 @@ export abstract class FlowRuntimeService {
 				context.state.variables['product.detail.found'] = false
 				context.state.variables['product.detail.skipped_reason'] =
 					'greeting_without_product_intent'
-				await this.ensureTerminalUserReply(context, {
+				await FlowRuntimeService.ensureTerminalUserReply(context, {
 					terminalNodeId: node.id,
 				})
 				return { paused: false, jumpToNodeId: null }
@@ -5444,12 +5444,12 @@ export abstract class FlowRuntimeService {
 				if (matched && shouldSendDetail) {
 					await ensureRagContextForProduct(matched)
 					const detailMessage = buildProductDetailReply(matched)
-					await this.sendWorkflowFinalText(context, detailMessage, {
+					await FlowRuntimeService.sendWorkflowFinalText(context, detailMessage, {
 						event: 'product_detail',
 						node_id: node.id,
 					})
 				} else if (!matched && shouldSendDetail) {
-					await this.sendWorkflowFinalText(
+					await FlowRuntimeService.sendWorkflowFinalText(
 						context,
 						'Saya belum menemukan produk yang dimaksud. Ketik angka daftar atau nama produk untuk saya cek lagi ya.',
 						{
@@ -5498,7 +5498,7 @@ export abstract class FlowRuntimeService {
 				context.state.variables['stock.available_qty'] = availableStock
 				context.state.variables['stock.variant'] = matched
 				if (matched && asBoolean(nodeData.checkStockSendAsMessage, false)) {
-					await this.sendWorkflowFinalText(
+					await FlowRuntimeService.sendWorkflowFinalText(
 						context,
 						`Stok ${String(matched.name || 'produk')} saat ini ${availableStock} unit.`,
 						{
@@ -5656,7 +5656,7 @@ export abstract class FlowRuntimeService {
 			}
 
 			if (cartAdded && hasCheckoutPaymentSignalInMessage(context.incomingText)) {
-				const checkoutNodeId = this.findActionNodeByType(
+				const checkoutNodeId = FlowRuntimeService.findActionNodeByType(
 					graph,
 					'checkout',
 					node.id,
@@ -5712,7 +5712,7 @@ export abstract class FlowRuntimeService {
 					hasOngoingOrderContext(context.state.variables)
 				if (!isUuid(orderId) && canRebuildCartBeforeCheckout) {
 					orderId =
-						(await this.createCartFromRecentOrderSummary(context)) || orderId
+						(await FlowRuntimeService.createCartFromRecentOrderSummary(context)) || orderId
 				}
 
 				if (!isUuid(orderId)) {
@@ -5825,7 +5825,7 @@ export abstract class FlowRuntimeService {
 						0,
 						Number(matched.available_stock || 0),
 					)
-					await this.sendWorkflowFinalText(
+					await FlowRuntimeService.sendWorkflowFinalText(
 						context,
 						`Varian yang paling cocok: ${String(matched.product_name || 'Product')} - ${String(matched.name || 'Variant')} (stok ${availableStock})`,
 						{
@@ -5849,7 +5849,7 @@ export abstract class FlowRuntimeService {
 				readRuntimeString(context.state.variables, amountVar) || '0'
 			const paymentLink = `https://pay.scalebiz.chat/qris/${provider}?amount=${encodeURIComponent(amount)}`
 			context.state.variables['qris.link'] = paymentLink
-			await this.sendWorkflowFinalText(
+			await FlowRuntimeService.sendWorkflowFinalText(
 				context,
 				`Silakan lakukan pembayaran via QRIS (${provider}): ${paymentLink}`,
 				{
@@ -5872,7 +5872,7 @@ export abstract class FlowRuntimeService {
 			const invoiceNumber = `${prefix}-${Date.now().toString().slice(-6)}`
 			context.state.variables['invoice.number'] = invoiceNumber
 			context.state.variables['invoice.due_days'] = dueDays
-			await this.sendWorkflowFinalText(
+			await FlowRuntimeService.sendWorkflowFinalText(
 				context,
 				`Invoice ${invoiceNumber} berhasil dibuat. Jatuh tempo ${dueDays} hari.`,
 				{
@@ -5900,7 +5900,7 @@ export abstract class FlowRuntimeService {
 				normalizedField.includes('payment') ||
 				normalizedField.includes('order')
 			if (isCriticalField && context.decisionEnvelope?.requires_approval) {
-				await this.routeToHumanAgent(context, nodeData, {
+				await FlowRuntimeService.routeToHumanAgent(context, nodeData, {
 					requireApproval: true,
 					reason: `Critical contact update (${field}) requires supervisor approval.`,
 					intent:
@@ -5969,7 +5969,7 @@ export abstract class FlowRuntimeService {
 		const handleNodeFailure = async (errorMessage: string) => {
 			if (fallbackBehavior === 'skip') return
 			if (fallbackBehavior === 'fallback_message' && fallbackMessage) {
-				await this.sendWorkflowFinalText(context, fallbackMessage, {
+				await FlowRuntimeService.sendWorkflowFinalText(context, fallbackMessage, {
 					event: 'ai_node_fallback',
 					node_id: node.id,
 				})
@@ -5981,17 +5981,17 @@ export abstract class FlowRuntimeService {
 		try {
 			if (node.type === 'ai_generate') {
 				const responsePrompt = asString(nodeData.responsePrompt) || ''
-				const composedMessage = this.withCustomerLevelPersonaInstruction(
+				const composedMessage = FlowRuntimeService.withCustomerLevelPersonaInstruction(
 					context,
 					responsePrompt
 						? `${responsePrompt}\n\nCustomer message:\n${context.incomingText}`
 						: context.incomingText,
 				)
-				const response = await this.executeWithPreferredChatbot(
+				const response = await FlowRuntimeService.executeWithPreferredChatbot(
 					context,
 					nodeData,
 					(chatbotId) =>
-						this.generateReplyWithChatbot(
+						FlowRuntimeService.generateReplyWithChatbot(
 							context,
 							chatbotId,
 							composedMessage,
@@ -6054,7 +6054,7 @@ export abstract class FlowRuntimeService {
 				].join('\n')
 
 				try {
-					const aiResponse = await this.executeWithPreferredChatbot(
+					const aiResponse = await FlowRuntimeService.executeWithPreferredChatbot(
 						context,
 						nodeData,
 						(chatbotId) =>
@@ -6149,12 +6149,12 @@ export abstract class FlowRuntimeService {
 				if (handoffTriggered) {
 					const handoffMessage = asString(nodeData.handoffMessage)
 					if (handoffMessage) {
-						await this.sendWorkflowFinalText(context, handoffMessage, {
+						await FlowRuntimeService.sendWorkflowFinalText(context, handoffMessage, {
 							event: 'ai_handoff',
 							node_id: node.id,
 						})
 					}
-					await this.routeToHumanAgent(context, nodeData, {
+					await FlowRuntimeService.routeToHumanAgent(context, nodeData, {
 						requireApproval: true,
 						reason:
 							'AI handoff criteria matched. Waiting supervisor approval before transfer.',
@@ -6178,13 +6178,13 @@ export abstract class FlowRuntimeService {
 		const endType = normalizeEndType(nodeData)
 
 		if (endType === 'human_agent') {
-			await this.ensureTerminalUserReply(context, {
+			await FlowRuntimeService.ensureTerminalUserReply(context, {
 				force: true,
 				handover: true,
 				nodeData,
 				terminalNodeId: node.id,
 			})
-			await this.routeToHumanAgent(context, nodeData, {
+			await FlowRuntimeService.routeToHumanAgent(context, nodeData, {
 				requireApproval: true,
 				reason: 'Flow end node requested human handover approval.',
 				intent:
@@ -6193,7 +6193,7 @@ export abstract class FlowRuntimeService {
 			return
 		}
 
-		await this.ensureTerminalUserReply(context, {
+		await FlowRuntimeService.ensureTerminalUserReply(context, {
 			force: true,
 			handover: false,
 			nodeData,
@@ -6224,7 +6224,7 @@ export abstract class FlowRuntimeService {
 			const node = graph.nodeById.get(currentNodeId)
 			if (!node) break
 
-			this.pushVisitedNode(context, node)
+			FlowRuntimeService.pushVisitedNode(context, node)
 			context.state.cursor_node_id = node.id
 			context.state.status = 'running'
 			context.state.last_executed_at = new Date().toISOString()
@@ -6241,7 +6241,7 @@ export abstract class FlowRuntimeService {
 			let nodeStatus: 'success' | 'error' = 'success'
 
 			try {
-				await this.appendExecutionTrace({
+				await FlowRuntimeService.appendExecutionTrace({
 					context,
 					node,
 					event: 'node_entered',
@@ -6271,7 +6271,7 @@ export abstract class FlowRuntimeService {
 						}
 						context.state.status = 'idle'
 						reason = 'completed'
-						await this.ensureTerminalUserReply(context, {
+						await FlowRuntimeService.ensureTerminalUserReply(context, {
 							nodeData: node.data,
 							terminalNodeId: node.id,
 						})
@@ -6302,7 +6302,7 @@ export abstract class FlowRuntimeService {
 						context.state.waiting_button = null
 						context.state.cursor_node_id = null
 						reason = 'completed'
-						await this.ensureTerminalUserReply(context, {
+						await FlowRuntimeService.ensureTerminalUserReply(context, {
 							nodeData: node.data,
 							terminalNodeId: node.id,
 						})
@@ -6327,7 +6327,7 @@ export abstract class FlowRuntimeService {
 						jumpToNodeId: null as string | null,
 					}
 					if (!(resumeFromWaitingButton && actionType === 'buttons')) {
-						actionResult = await this.executeActionNode(node, graph, context)
+						actionResult = await FlowRuntimeService.executeActionNode(node, graph, context)
 					} else {
 						actionResult = {
 							paused: false,
@@ -6358,7 +6358,7 @@ export abstract class FlowRuntimeService {
 						}
 					}
 					if (actionResult.jumpToNodeId === ROUTER_AI_DEFAULT_REPLY_NODE_ID) {
-						await this.ensureTerminalUserReply(context, {
+						await FlowRuntimeService.ensureTerminalUserReply(context, {
 							nodeData: node.data,
 							terminalNodeId: node.id,
 						})
@@ -6421,7 +6421,7 @@ export abstract class FlowRuntimeService {
 						context.state.status = 'completed'
 						context.state.cursor_node_id = null
 						reason = 'completed'
-						await this.ensureTerminalUserReply(context, {
+						await FlowRuntimeService.ensureTerminalUserReply(context, {
 							nodeData: node.data,
 							terminalNodeId: node.id,
 						})
@@ -6442,7 +6442,7 @@ export abstract class FlowRuntimeService {
 					node.type === 'ai_handoff'
 				) {
 					matched = true
-					await this.executeAINode(node, context)
+					await FlowRuntimeService.executeAINode(node, context)
 					nodeOutput = {
 						node_category: 'ai',
 						ai_node_type: node.type,
@@ -6458,7 +6458,7 @@ export abstract class FlowRuntimeService {
 						context.state.status = 'completed'
 						context.state.cursor_node_id = null
 						reason = 'completed'
-						await this.ensureTerminalUserReply(context, {
+						await FlowRuntimeService.ensureTerminalUserReply(context, {
 							nodeData: node.data,
 							terminalNodeId: node.id,
 						})
@@ -6471,8 +6471,8 @@ export abstract class FlowRuntimeService {
 
 				if (node.type === 'end') {
 					matched = true
-					await this.executeEndNode(node, context)
-					await this.ensureTerminalUserReply(context, {
+					await FlowRuntimeService.executeEndNode(node, context)
+					await FlowRuntimeService.ensureTerminalUserReply(context, {
 						nodeData: node.data,
 						terminalNodeId: node.id,
 					})
@@ -6501,12 +6501,12 @@ export abstract class FlowRuntimeService {
 				throw error
 			} finally {
 				const afterVariables = toTraceSafeValue(context.state.variables, 1)
-				nodeOutput = this.attachSentMessagesToNodeOutput(
+				nodeOutput = FlowRuntimeService.attachSentMessagesToNodeOutput(
 					nodeOutput,
 					context,
 					beforeSentMessageCount,
 				)
-				await this.appendExecutionTrace({
+				await FlowRuntimeService.appendExecutionTrace({
 					context,
 					node,
 					event: 'node_executed',
@@ -6541,7 +6541,7 @@ export abstract class FlowRuntimeService {
 		context.state.waiting_button = null
 		context.state.cursor_node_id = null
 		if (matched) {
-			await this.ensureTerminalUserReply(context, {})
+			await FlowRuntimeService.ensureTerminalUserReply(context, {})
 		}
 		return {
 			matched,
@@ -6605,29 +6605,29 @@ export abstract class FlowRuntimeService {
 				whatsappChannel?.extended_metadata,
 			)
 			const inboxHasTeamConfig =
-				Object.prototype.hasOwnProperty.call(
+				Object.hasOwn(
 					inboxChannelConfig,
 					'default_team_ids',
 				) ||
-				Object.prototype.hasOwnProperty.call(
+				Object.hasOwn(
 					inboxChannelConfig,
 					'defaultTeamIds',
 				)
 			const inboxHasAgentConfig =
-				Object.prototype.hasOwnProperty.call(
+				Object.hasOwn(
 					inboxChannelConfig,
 					'default_agent_ids',
 				) ||
-				Object.prototype.hasOwnProperty.call(
+				Object.hasOwn(
 					inboxChannelConfig,
 					'defaultAgentIds',
 				)
 			const inboxHasDistributionConfig =
-				Object.prototype.hasOwnProperty.call(
+				Object.hasOwn(
 					inboxChannelConfig,
 					'distribution_method',
 				) ||
-				Object.prototype.hasOwnProperty.call(
+				Object.hasOwn(
 					inboxChannelConfig,
 					'distributionMethod',
 				)
@@ -7101,9 +7101,9 @@ export abstract class FlowRuntimeService {
 					},
 				}
 
-				await this.hydrateConversationCartContext(context)
+				await FlowRuntimeService.hydrateConversationCartContext(context)
 
-				const outcome = await this.runFlow(graph, context)
+				const outcome = await FlowRuntimeService.runFlow(graph, context)
 				if (!outcome.matched && !outcome.skipChatbot) {
 					continue
 				}

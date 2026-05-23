@@ -200,7 +200,7 @@ function isMissingRelationError(error: unknown, relation: string): boolean {
 	const text = buildTextFromError(error)
 	return (
 		text.includes('42p01') ||
-		text.includes(`relation \"${relation.toLowerCase()}\" does not exist`) ||
+		text.includes(`relation "${relation.toLowerCase()}" does not exist`) ||
 		text.includes(`relation '${relation.toLowerCase()}' does not exist`)
 	)
 }

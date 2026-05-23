@@ -59,7 +59,8 @@ export const Route = createFileRoute('/_app/team')({
 	component: AgentsManagementPage,
 	beforeLoad: () => {
 		throw redirect({
-			to: '/settings?tab=teams',
+			to: '/settings' as any,
+			search: { tab: 'teams' },
 			replace: true,
 		})
 	},

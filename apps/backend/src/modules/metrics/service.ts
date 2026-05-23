@@ -599,24 +599,24 @@ export abstract class MetricsService {
 		const target = targetAppId
 		const [messageAggregate, conversationAggregate, aiCurrent, handoverAggregate] =
 			await Promise.all([
-				this.getMessageAggregate(target, {
+				MetricsService.getMessageAggregate(target, {
 					...range,
 					period: 'today',
 					dayCount: 1,
 					timezone: 'Asia/Jakarta',
 				}),
-				this.getConversationAggregate(target, {
+				MetricsService.getConversationAggregate(target, {
 					...range,
 					period: 'today',
 					dayCount: 1,
 					timezone: 'Asia/Jakarta',
 				}),
-				this.getAiResolutionAggregate(
+				MetricsService.getAiResolutionAggregate(
 					target,
 					range.currentStart,
 					range.currentEnd,
 				),
-				this.getHandoverAggregate(target, {
+				MetricsService.getHandoverAggregate(target, {
 					...range,
 					period: 'today',
 					dayCount: 1,
@@ -696,39 +696,39 @@ export abstract class MetricsService {
 			rawAgents,
 			channelHealth,
 		] = await Promise.all([
-			this.getMessageAggregate(target, range),
-			this.getConversationAggregate(target, range),
-			this.getAiResolutionAggregate(
+			MetricsService.getMessageAggregate(target, range),
+			MetricsService.getConversationAggregate(target, range),
+			MetricsService.getAiResolutionAggregate(
 				target,
 				range.currentStart,
 				range.currentEnd,
 			),
-			this.getAiResolutionAggregate(
+			MetricsService.getAiResolutionAggregate(
 				target,
 				range.previousStart,
 				range.previousEnd,
 			),
-			this.getOrderAggregate(target, range),
-			this.getHandoverAggregate(target, range),
-			this.getQualifiedAggregate(target, range),
-			this.getCustomerAggregate(target, range),
-			this.getVolume(target, range),
-			this.getAgents(target, range),
-			this.getChannelHealth(target),
+			MetricsService.getOrderAggregate(target, range),
+			MetricsService.getHandoverAggregate(target, range),
+			MetricsService.getQualifiedAggregate(target, range),
+			MetricsService.getCustomerAggregate(target, range),
+			MetricsService.getVolume(target, range),
+			MetricsService.getAgents(target, range),
+			MetricsService.getChannelHealth(target),
 		])
 
 		const conversationAggregate = {
 			...conversationAggregateBase,
 			avg_first_response_current:
 				toNumber(conversationAggregateBase.avg_first_response_current) ||
-				(await this.getDerivedAverageResponseSeconds(
+				(await MetricsService.getDerivedAverageResponseSeconds(
 					target,
 					range.currentStart,
 					range.currentEnd,
 				)),
 			avg_first_response_previous:
 				toNumber(conversationAggregateBase.avg_first_response_previous) ||
-				(await this.getDerivedAverageResponseSeconds(
+				(await MetricsService.getDerivedAverageResponseSeconds(
 					target,
 					range.previousStart,
 					range.previousEnd,

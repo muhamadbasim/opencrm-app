@@ -93,7 +93,7 @@ export abstract class CRMService {
 					: data.stage_id
 						? String(data.stage_id)
 						: null
-			let nextStageId =
+			const nextStageId =
 				requestedStageId === undefined ? deal.stage_id : requestedStageId
 
 			if (nextStageId) {

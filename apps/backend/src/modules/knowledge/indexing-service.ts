@@ -782,7 +782,7 @@ async function syncSource(payload: KnowledgeChangeEventPayload): Promise<void> {
   }
 
   let ingestionJobId: string | null = null;
-  let mergedMetadata = toRecord(source.metadata);
+  const mergedMetadata = toRecord(source.metadata);
 
   await prisma.$executeRawUnsafe(
     `

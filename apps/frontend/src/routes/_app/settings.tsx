@@ -171,7 +171,7 @@ function SettingsPage() {
 	})
 
 	// Labels State
-	const routeParams = Route.useParams({ strict: false }) as { appId?: string }
+	const routeParams = (Route.useParams as any)({ strict: false }) as { appId?: string }
 	const appId =
 		routeParams.appId ||
 		(typeof localStorage !== 'undefined'

@@ -119,7 +119,7 @@ export abstract class ConversationBulkEditService {
 			throw new Error('Please choose at least one bulk action')
 		}
 
-		await this.validateChangeScope(input.appId, changes)
+		await ConversationBulkEditService.validateChangeScope(input.appId, changes)
 
 		const appScopedCount = await prisma.conversations.count({
 			where: {
@@ -210,7 +210,7 @@ export abstract class ConversationBulkEditService {
 
 		for (const snapshot of snapshots) {
 			try {
-				await this.processSingleConversation(snapshot, data.appId, changes, {
+				await ConversationBulkEditService.processSingleConversation(snapshot, data.appId, changes, {
 					actorId: normalizeOptionalUuid(data.actorId) || null,
 					jobId: String(job.id),
 				})
@@ -288,7 +288,7 @@ export abstract class ConversationBulkEditService {
 		}
 
 		if (changes.collaboratorIds && changes.collaboratorIds.length > 0) {
-			await this.syncCollaborators({
+			await ConversationBulkEditService.syncCollaborators({
 				conversationId: snapshot.id,
 				collaboratorIds: changes.collaboratorIds,
 				actorId: context.actorId,
@@ -298,12 +298,12 @@ export abstract class ConversationBulkEditService {
 		}
 
 		if (changes.labelId) {
-			await this.addLabelIfNeeded(snapshot.id, changes.labelId)
+			await ConversationBulkEditService.addLabelIfNeeded(snapshot.id, changes.labelId)
 			appliedChanges.label_id = changes.labelId
 		}
 
 		if (changes.pipelineStageId) {
-			await this.updatePipelineStage(snapshot, appId, changes.pipelineStageId, {
+			await ConversationBulkEditService.updatePipelineStage(snapshot, appId, changes.pipelineStageId, {
 				actorId: context.actorId,
 			})
 			appliedChanges.pipeline_stage_id = changes.pipelineStageId

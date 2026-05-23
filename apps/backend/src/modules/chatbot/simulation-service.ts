@@ -916,7 +916,7 @@ function extractKnowledgeImageMappings(
     }
 
     const lineRegex =
-      /(?:^|\n)\s*(?:[#>*-]+\s*)?([^\n:]{2,90}?)(?:\s*[:\-]\s*|\s+)(https?:\/\/[^\s)]+)\s*(?=\n|$)/gi;
+      /(?:^|\n)\s*(?:[#>*-]+\s*)?([^\n:]{2,90}?)(?:\s*[:-]\s*|\s+)(https?:\/\/[^\s)]+)\s*(?=\n|$)/gi;
     let lineMatch: RegExpExecArray | null = null;
     while ((lineMatch = lineRegex.exec(content)) !== null) {
       const label = String(lineMatch[1] || "")
@@ -2690,7 +2690,7 @@ function extractRelevantKnowledgeWindow(
 
   const leadContext = Math.floor(maxChars * 0.35);
   let start = Math.max(0, bestIndex - leadContext);
-  let end = Math.min(content.length, start + maxChars);
+  const end = Math.min(content.length, start + maxChars);
   if (end - start < maxChars) {
     start = Math.max(0, end - maxChars);
   }
@@ -5005,7 +5005,7 @@ function parseLocationBranchRowsFromText(value: string): LocationBranchRow[] {
     if (!normalizedLine) continue;
 
     const namedBranchMatch = normalizedLine.match(
-      /^(?:cabang|branch)\s*\d*\s*[:\-]\s*(.+)$/i,
+      /^(?:cabang|branch)\s*\d*\s*[:-]\s*(.+)$/i,
     );
     if (namedBranchMatch) {
       const parsedName = cleanLocationTextValue(namedBranchMatch[1]);
@@ -5022,7 +5022,7 @@ function parseLocationBranchRowsFromText(value: string): LocationBranchRow[] {
     }
 
     const branchMatch = normalizedLine.match(
-      /^(?:\d+[\).:-]?\s*)?(?:\*+)?\s*((?:sozo|branch|cabang)[^:]*?)(?:\*+)?$/i,
+      /^(?:\d+[).:-]?\s*)?(?:\*+)?\s*((?:sozo|branch|cabang)[^:]*?)(?:\*+)?$/i,
     );
     if (branchMatch) {
       const parsedName = cleanLocationTextValue(branchMatch[1]);
@@ -5041,14 +5041,14 @@ function parseLocationBranchRowsFromText(value: string): LocationBranchRow[] {
     if (!current) continue;
 
     const addressMatch = normalizedLine.match(
-      /^(?:alamat|address)\s*[:\-]\s*(.+)$/i,
+      /^(?:alamat|address)\s*[:-]\s*(.+)$/i,
     );
     if (addressMatch) {
       current.address = cleanLocationTextValue(addressMatch[1]);
       continue;
     }
 
-    if (/^(?:maps?|google maps?)\s*[:\-]/i.test(normalizedLine)) {
+    if (/^(?:maps?|google maps?)\s*[:-]/i.test(normalizedLine)) {
       current.mapsUrl =
         toFirstUrl(normalizedLine) || cleanLocationTextValue(normalizedLine);
       continue;
@@ -5057,7 +5057,6 @@ function parseLocationBranchRowsFromText(value: string): LocationBranchRow[] {
     const urlFromLine = toFirstUrl(normalizedLine);
     if (urlFromLine && /maps|goo\.gl|google/i.test(normalizedLine)) {
       current.mapsUrl = urlFromLine;
-      continue;
     }
   }
 
@@ -5207,7 +5206,6 @@ function buildLocationResponseFromToolRuns(args: {
     try {
       const parsed = JSON.parse(responseText) as unknown;
       branchRows.push(...parseLocationBranchRowsFromUnknown(parsed));
-      continue;
     } catch {
       branchRows.push(...parseLocationBranchRowsFromText(responseText));
     }
@@ -5964,7 +5962,7 @@ export abstract class ChatbotSimulationService {
       liveCharBudget: retrievalProfile.liveCharBudget,
       liveMaxItemChars: retrievalProfile.liveMaxItemChars,
     });
-    let selectedKnowledge = compressedKnowledge.items;
+    const selectedKnowledge = compressedKnowledge.items;
     const retrievalLatencyMs = Math.max(1, Date.now() - retrievalStartedAt);
     const rtkSummary: RtkSummaryLog = {
       ...compressedKnowledge.summary,

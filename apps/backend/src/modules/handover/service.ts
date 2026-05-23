@@ -220,7 +220,7 @@ export abstract class HandoverService {
 				slaDueAt = request.sla_due_at
 			}
 
-			const priority = this.calculatePriority(conv)
+			const priority = HandoverService.calculatePriority(conv)
 
 			const waitingSeconds = conv.last_message_at
 				? Math.floor((Date.now() - new Date(conv.last_message_at).getTime()) / 1000)
@@ -240,7 +240,7 @@ export abstract class HandoverService {
 				contactPhone: conv.contacts?.phone_number || '',
 				contactAvatar: conv.contacts?.avatar_url || undefined,
 				preview,
-				reason: this.deriveReason(request?.ai_reason, aiAnalytics?.intent),
+				reason: HandoverService.deriveReason(request?.ai_reason, aiAnalytics?.intent),
 				intent: aiAnalytics?.intent || request?.ai_intent || 'unknown',
 				aiConfidence: aiAnalytics?.confidence || (request?.ai_intent ? 0.5 : 0),
 				waitingSeconds,
@@ -281,8 +281,8 @@ export abstract class HandoverService {
 		const isSupervisorOrAdmin = userRole === 'supervisor' || userRole === 'admin'
 		const status = isSupervisorOrAdmin ? 'approved' : 'pending'
 
-		const aiReason = await this.generateAiReason(data.conversationId)
-		const intent = await this.extractIntent(data.conversationId)
+		const aiReason = await HandoverService.generateAiReason(data.conversationId)
+		const intent = await HandoverService.extractIntent(data.conversationId)
 
 		let slaDueAt: Date | undefined
 		const defaultPolicy = await prisma.sla_policies.findFirst({
@@ -293,7 +293,7 @@ export abstract class HandoverService {
 			slaDueAt.setMinutes(slaDueAt.getMinutes() + defaultPolicy.first_response_time)
 		}
 
-		const sourceRuleId = data.sourceRuleId || (await this.evaluateEscalationRoute(conversation))
+		const sourceRuleId = data.sourceRuleId || (await HandoverService.evaluateEscalationRoute(conversation))
 
 		const request = await prisma.handover_requests.create({
 			data: {
@@ -335,7 +335,7 @@ export abstract class HandoverService {
 			},
 		})
 
-		await this.logActivity({
+		await HandoverService.logActivity({
 			conversationId: data.conversationId,
 			action: status === 'approved' ? 'handover_approved' : 'handover_requested',
 			actorId: data.requestedBy,
@@ -357,7 +357,7 @@ export abstract class HandoverService {
 			)
 		}
 
-		this.emitHandoverEvent(targetAppId, 'handover:request_created', {
+		HandoverService.emitHandoverEvent(targetAppId, 'handover:request_created', {
 			requestId: request.id,
 			conversationId: data.conversationId,
 			status,
@@ -487,7 +487,7 @@ export abstract class HandoverService {
 			},
 		})
 
-		await this.logActivity({
+		await HandoverService.logActivity({
 			conversationId: data.conversationId,
 			action: 'handover_requested',
 			actorType: 'system',
@@ -502,7 +502,7 @@ export abstract class HandoverService {
 			},
 		})
 
-		this.emitHandoverEvent(targetAppId, 'handover:request_created', {
+		HandoverService.emitHandoverEvent(targetAppId, 'handover:request_created', {
 			requestId: request.id,
 			conversationId: data.conversationId,
 			status: 'pending',
@@ -595,7 +595,7 @@ export abstract class HandoverService {
 			)
 		}
 
-		await this.logActivity({
+		await HandoverService.logActivity({
 			conversationId: request.conversation_id,
 			action: 'handover_approved',
 			actorId: approverId,
@@ -608,7 +608,7 @@ export abstract class HandoverService {
 		})
 
 		if (request.app_id) {
-			this.emitHandoverEvent(request.app_id, 'handover:request_approved', {
+			HandoverService.emitHandoverEvent(request.app_id, 'handover:request_approved', {
 				requestId,
 				conversationId: request.conversation_id,
 			})
@@ -670,7 +670,7 @@ export abstract class HandoverService {
 			},
 		})
 
-		await this.logActivity({
+		await HandoverService.logActivity({
 			conversationId: request.conversation_id,
 			action: 'handover_rejected',
 			actorId: rejecterId,
@@ -682,7 +682,7 @@ export abstract class HandoverService {
 		})
 
 		if (request.app_id) {
-			this.emitHandoverEvent(request.app_id, 'handover:request_rejected', {
+			HandoverService.emitHandoverEvent(request.app_id, 'handover:request_rejected', {
 				requestId,
 				conversationId: request.conversation_id,
 			})
@@ -813,7 +813,7 @@ export abstract class HandoverService {
 					supervisorId,
 					nextDeadline,
 				)
-				await this.logActivity({
+				await HandoverService.logActivity({
 					conversationId: row.conversation_id,
 					action: 'handover_escalated',
 					actorType: 'system',
@@ -861,7 +861,7 @@ export abstract class HandoverService {
 				},
 			})
 
-			await this.logActivity({
+			await HandoverService.logActivity({
 				conversationId: row.conversation_id,
 				action: 'handover_triage_pending',
 				actorType: 'system',
@@ -971,7 +971,7 @@ export abstract class HandoverService {
 			}
 		}
 
-		const periodMs = this.parsePeriod(period)
+		const periodMs = HandoverService.parsePeriod(period)
 		const fromDate = new Date(Date.now() - periodMs)
 
 		const [requests, totalConversations, slaBreaches, ratings] = await Promise.all([
@@ -1199,7 +1199,7 @@ export abstract class HandoverService {
 		const targetAppId = await resolveAppId(appId)
 		if (!targetAppId) return { breaches: 0, compliance: 100, total: 0 }
 
-		const periodMs = this.parsePeriod(period)
+		const periodMs = HandoverService.parsePeriod(period)
 		const fromDate = new Date(Date.now() - periodMs)
 
 		const [totalConversations, breaches] = await Promise.all([

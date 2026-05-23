@@ -223,7 +223,7 @@ export const flow = new Elysia({ prefix: '/flows', tags: ['Flow'] })
 				body && typeof body === 'object' && !Array.isArray(body)
 					? (body as Record<string, unknown>)
 					: {}
-			const input = Object.prototype.hasOwnProperty.call(requestBody, 'input')
+			const input = Object.hasOwn(requestBody, 'input')
 				? requestBody.input
 				: requestBody
 			const result = await FlowService.runFlowTest(params.id, resolvedAppId, {

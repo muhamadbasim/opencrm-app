@@ -505,7 +505,7 @@ function OrdersManagementPage() {
 									className="pl-9"
 								/>
 							</div>
-							<Select value={journeyFilter} onValueChange={setJourneyFilter}>
+							<Select value={journeyFilter} onValueChange={(v) => setJourneyFilter(v ?? 'all')}>
 								<SelectTrigger>
 									<SelectValue placeholder="Journey" />
 								</SelectTrigger>
@@ -517,7 +517,7 @@ function OrdersManagementPage() {
 									))}
 								</SelectContent>
 							</Select>
-							<Select value={paymentFilter} onValueChange={setPaymentFilter}>
+							<Select value={paymentFilter} onValueChange={(v) => setPaymentFilter(v ?? 'all')}>
 								<SelectTrigger>
 									<SelectValue placeholder="Invoice" />
 								</SelectTrigger>
@@ -827,7 +827,7 @@ function OrdersManagementPage() {
 							<div className="grid w-full gap-3">
 								<Select
 									value={selectedPaymentMethod}
-									onValueChange={setSelectedPaymentMethod}
+									onValueChange={(v) => setSelectedPaymentMethod(v ?? '')}
 									disabled={
 										detailLoading ||
 										sendLinkLoading ||

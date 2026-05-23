@@ -1221,7 +1221,7 @@ async function writeConversationAdditionalAttributes(
 async function clearFollowupState(conversationId: string) {
 	const attrs = await getConversationAdditionalAttributes(conversationId)
 	if (
-		!Object.prototype.hasOwnProperty.call(attrs, CHATBOT_FOLLOWUP_STATE_KEY)
+		!Object.hasOwn(attrs, CHATBOT_FOLLOWUP_STATE_KEY)
 	) {
 		return
 	}
@@ -1544,7 +1544,7 @@ export abstract class ChatbotFollowupService {
 		let processed = 0
 		for (const row of dueRows) {
 			if (!isUuid(row.id)) continue
-			const sent = await this.processDueConversation(row.id).catch((error) => {
+			const sent = await ChatbotFollowupService.processDueConversation(row.id).catch((error) => {
 				console.error(
 					`[ChatbotFollowupService] Failed processing conversation ${row.id}:`,
 					error,
@@ -1861,7 +1861,7 @@ export abstract class ChatbotFollowupService {
 			)
 				? telemetryFromGenerated.ai_knowledge_references
 				: []
-			let aiRtkSummary =
+			const aiRtkSummary =
 				telemetryFromGenerated.ai_rtk_summary &&
 				typeof telemetryFromGenerated.ai_rtk_summary === 'object'
 					? telemetryFromGenerated.ai_rtk_summary

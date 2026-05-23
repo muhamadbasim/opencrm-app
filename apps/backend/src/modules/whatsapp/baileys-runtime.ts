@@ -433,9 +433,9 @@ export abstract class BaileysRuntimeService {
 	private static bootstrapPromise: Promise<void> | null = null
 
 	static async bootstrap() {
-		if (this.bootstrapPromise) return this.bootstrapPromise
+		if (BaileysRuntimeService.bootstrapPromise) return BaileysRuntimeService.bootstrapPromise
 
-		this.bootstrapPromise = (async () => {
+		BaileysRuntimeService.bootstrapPromise = (async () => {
 			await ensureBaileysSessionStorage()
 
 			const channels = await prisma.whatsapp_channels.findMany({
@@ -450,14 +450,14 @@ export abstract class BaileysRuntimeService {
 
 			await Promise.allSettled(
 				channels.map((channel) =>
-					this.ensureChannel(channel.id, {
+					BaileysRuntimeService.ensureChannel(channel.id, {
 						waitForReadyMs: 0,
 					}),
 				),
 			)
 		})()
 
-		return this.bootstrapPromise
+		return BaileysRuntimeService.bootstrapPromise
 	}
 
 	static async ensureChannel(
@@ -481,7 +481,7 @@ export abstract class BaileysRuntimeService {
 		})
 
 		if (options?.forceRestart) {
-			this.clearRestartTimer(entry)
+			BaileysRuntimeService.clearRestartTimer(entry)
 			entry.socket?.end(undefined)
 			entry.socket = null
 			entry.pairingCodeRequested = false
@@ -489,14 +489,14 @@ export abstract class BaileysRuntimeService {
 
 		if (!entry.socket && !entry.starting) {
 			entry.starting = true
-			void this.startSocket(channel, entry).finally(() => {
+			void BaileysRuntimeService.startSocket(channel, entry).finally(() => {
 				entry.starting = false
 			})
 		}
 
 		return options?.waitForReadyMs
-			? this.waitForReadyState(channel.id, options.waitForReadyMs)
-			: this.getSessionSnapshot(channel.id)
+			? BaileysRuntimeService.waitForReadyState(channel.id, options.waitForReadyMs)
+			: BaileysRuntimeService.getSessionSnapshot(channel.id)
 	}
 
 	static async getSessionSnapshot(channelId: string): Promise<BaileysSessionSnapshot> {
@@ -543,7 +543,7 @@ export abstract class BaileysRuntimeService {
 			throw new Error(`Baileys channel ${channelKey} not found`)
 		}
 
-		const session = await this.ensureChannel(channel.id, {
+		const session = await BaileysRuntimeService.ensureChannel(channel.id, {
 			waitForReadyMs: 12_000,
 		})
 		if (session.status !== 'connected') {
@@ -584,7 +584,7 @@ export abstract class BaileysRuntimeService {
 			buildWhatsappJid(recipientWaId, recipientAddressingMode || 'pn')
 		if (!recipientJid) throw new Error('recipientWhatsAppId is required')
 
-		const messageBody = await this.buildOutboundMessage(payload)
+		const messageBody = await BaileysRuntimeService.buildOutboundMessage(payload)
 		const sent = await entry.socket.sendMessage(
 			recipientJid,
 			messageBody as any,
@@ -712,7 +712,7 @@ export abstract class BaileysRuntimeService {
 		})
 
 		socket.ev.on('connection.update', (update) => {
-			void this.handleConnectionUpdate({
+			void BaileysRuntimeService.handleConnectionUpdate({
 				channel,
 				entry,
 				socket,
@@ -722,11 +722,11 @@ export abstract class BaileysRuntimeService {
 
 		socket.ev.on('messages.upsert', ({ messages, type }) => {
 			if (type !== 'notify') return
-			void this.handleMessagesUpsert(entry, socket, messages)
+			void BaileysRuntimeService.handleMessagesUpsert(entry, socket, messages)
 		})
 
 		socket.ev.on('messages.update', (updates) => {
-			void this.handleMessageStatusUpdates(entry, updates)
+			void BaileysRuntimeService.handleMessageStatusUpdates(entry, updates)
 		})
 	}
 
@@ -860,7 +860,7 @@ export abstract class BaileysRuntimeService {
 					updated_at: new Date(),
 				},
 			})
-			this.scheduleRestart(entry.channelId, 250)
+			BaileysRuntimeService.scheduleRestart(entry.channelId, 250)
 			return
 		}
 
@@ -897,7 +897,7 @@ export abstract class BaileysRuntimeService {
 		})
 
 		if (shouldReconnect) {
-			this.scheduleRestart(entry.channelId, 2_500)
+			BaileysRuntimeService.scheduleRestart(entry.channelId, 2_500)
 		}
 	}
 
@@ -928,7 +928,7 @@ export abstract class BaileysRuntimeService {
 					getWaIdFromJid(message.key.remoteJid)
 				if (!senderWaId) continue
 
-				const normalized = await this.normalizeInboundMessage({
+				const normalized = await BaileysRuntimeService.normalizeInboundMessage({
 					channelKey: entry.providerChannelKey,
 					channelId: entry.channelId,
 					socket,
@@ -983,7 +983,7 @@ export abstract class BaileysRuntimeService {
 			mimeType = asString(normalizedContent.imageMessage?.mimetype)
 			replyToExternalId =
 				asString(normalizedContent.imageMessage?.contextInfo?.stanzaId) || null
-			mediaUrl = await this.resolveInboundMediaUrl({
+			mediaUrl = await BaileysRuntimeService.resolveInboundMediaUrl({
 				channelId: params.channelId,
 				externalMessageId,
 				socket: params.socket,
@@ -997,7 +997,7 @@ export abstract class BaileysRuntimeService {
 			mimeType = asString(normalizedContent.videoMessage?.mimetype)
 			replyToExternalId =
 				asString(normalizedContent.videoMessage?.contextInfo?.stanzaId) || null
-			mediaUrl = await this.resolveInboundMediaUrl({
+			mediaUrl = await BaileysRuntimeService.resolveInboundMediaUrl({
 				channelId: params.channelId,
 				externalMessageId,
 				socket: params.socket,
@@ -1011,7 +1011,7 @@ export abstract class BaileysRuntimeService {
 			mimeType = asString(normalizedContent.audioMessage?.mimetype)
 			replyToExternalId =
 				asString(normalizedContent.audioMessage?.contextInfo?.stanzaId) || null
-			mediaUrl = await this.resolveInboundMediaUrl({
+			mediaUrl = await BaileysRuntimeService.resolveInboundMediaUrl({
 				channelId: params.channelId,
 				externalMessageId,
 				socket: params.socket,
@@ -1026,7 +1026,7 @@ export abstract class BaileysRuntimeService {
 			fileName = asString(normalizedContent.documentMessage?.fileName)
 			replyToExternalId =
 				asString(normalizedContent.documentMessage?.contextInfo?.stanzaId) || null
-			mediaUrl = await this.resolveInboundMediaUrl({
+			mediaUrl = await BaileysRuntimeService.resolveInboundMediaUrl({
 				channelId: params.channelId,
 				externalMessageId,
 				socket: params.socket,
@@ -1134,7 +1134,7 @@ export abstract class BaileysRuntimeService {
 	private static async waitForReadyState(channelId: string, timeoutMs: number) {
 		const startedAt = Date.now()
 		while (Date.now() - startedAt <= timeoutMs) {
-			const snapshot = await this.getSessionSnapshot(channelId)
+			const snapshot = await BaileysRuntimeService.getSessionSnapshot(channelId)
 			if (
 				!['pending', 'connecting', 'reconnecting', 'restarting'].includes(
 					snapshot.status,
@@ -1144,16 +1144,16 @@ export abstract class BaileysRuntimeService {
 			}
 			await Bun.sleep(300)
 		}
-		return this.getSessionSnapshot(channelId)
+		return BaileysRuntimeService.getSessionSnapshot(channelId)
 	}
 
 	private static scheduleRestart(channelId: string, delayMs: number) {
 		const entry = runtimeEntries.get(channelId)
 		if (!entry) return
-		this.clearRestartTimer(entry)
+		BaileysRuntimeService.clearRestartTimer(entry)
 		entry.restartTimer = setTimeout(() => {
 			entry.restartTimer = null
-			void this.ensureChannel(channelId, { forceRestart: true }).catch((error) => {
+			void BaileysRuntimeService.ensureChannel(channelId, { forceRestart: true }).catch((error) => {
 				console.error('[BaileysRuntime] Failed to restart channel', error)
 			})
 		}, delayMs)
