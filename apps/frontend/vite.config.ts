@@ -72,7 +72,7 @@ export default defineConfig({
 	},
 	server: {
 		host: true,
-		allowedHosts: ['local-fe.scalebiz.chat', 'localhost', '127.0.0.1'],
+		allowedHosts: true,
 		proxy: {
 			'/api': {
 				target: apiProxyTarget,
