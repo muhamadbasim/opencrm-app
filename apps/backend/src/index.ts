@@ -331,6 +331,20 @@ if (IS_API_MODE) {
 	)
 	console.log(`📚 Swagger docs at http://localhost:${app.server?.port}/docs`)
 	console.log(`🔐 Auth at http://localhost:${app.server?.port}/auth`)
+
+	// Reconnect embedded Baileys WhatsApp channels in the background so inbound
+	// messages resume after a restart without waiting for the first outbound
+	// send. Fire-and-forget; failures are logged but never block API boot.
+	// Set BAILEYS_EMBEDDED_BOOTSTRAP=off to disable (e.g. when running the
+	// external Baileys microservice exclusively).
+	if (String(process.env.BAILEYS_EMBEDDED_BOOTSTRAP || '').toLowerCase() !== 'off') {
+		void import('./modules/whatsapp/baileys-runtime')
+			.then(({ BaileysRuntimeService }) => BaileysRuntimeService.bootstrap())
+			.then(() => console.log('📱 Baileys embedded runtime bootstrapped'))
+			.catch((error) =>
+				console.error('[BaileysRuntime] Bootstrap failed', error),
+			)
+	}
 } else if (APP_MODE === 'worker' || APP_MODE === 'scheduler') {
 	await import('./workers')
 	console.log(`⚙️ Runtime mode ${APP_MODE} started`)

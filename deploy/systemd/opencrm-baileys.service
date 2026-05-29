@@ -1,0 +1,19 @@
+[Unit]
+Description=OpenCRM Baileys WhatsApp Service
+After=network.target postgresql.service redis-server.service opencrm-api.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/.openclaw/workspace/opencrm-app/apps/backend
+EnvironmentFile=/home/ubuntu/.openclaw/workspace/opencrm-app/.env
+EnvironmentFile=/home/ubuntu/.openclaw/workspace/opencrm-app/apps/backend/.env
+Environment=PATH=/home/ubuntu/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/node --import /home/ubuntu/.openclaw/workspace/opencrm-app/node_modules/.bun/tsx@4.21.0/node_modules/tsx/dist/esm/index.mjs scripts/baileys-service.ts
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/opencrm-baileys.log
+StandardError=append:/var/log/opencrm-baileys.log
+
+[Install]
+WantedBy=multi-user.target

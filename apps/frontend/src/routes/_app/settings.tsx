@@ -41,6 +41,7 @@ import {
 	playNotificationSound,
 	sendBrowserNotification,
 } from '@/lib/notifications'
+import { API_BASE } from '@/lib/api'
 import PakasirSettingsManager from '@/components/settings/PakasirSettingsManager'
 import WhatsAppSettingsManager from '@/components/settings/WhatsAppSettingsManager'
 import AIConfigurationManager from '@/components/settings/AIConfigurationManager'
@@ -117,6 +118,27 @@ const getInitialActiveNav = (): SettingsNavItemId => {
 	}
 }
 
+type StoredUser = {
+	id?: string
+	name?: string | null
+	email?: string | null
+	phone_number?: string | null
+	user?: StoredUser
+}
+
+function readStoredUser(): StoredUser | null {
+	if (typeof localStorage === 'undefined') return null
+	const raw = localStorage.getItem('scalechat_user')
+	if (!raw) return null
+	try {
+		const parsed = JSON.parse(raw) as StoredUser
+		if (parsed.user && typeof parsed.user === 'object') return parsed.user
+		return parsed
+	} catch {
+		return null
+	}
+}
+
 function SettingsPage() {
 	const navigate = useNavigate()
 	const [activeNav, setActiveNav] =
@@ -124,6 +146,19 @@ function SettingsPage() {
 	const { resolvedTheme, setTheme } = useTheme()
 	const themeSwitchRef = useRef<HTMLDivElement>(null)
 	const [isThemeAnimating, setIsThemeAnimating] = useState(false)
+	const [profileName, setProfileName] = useState('')
+	const [profileEmail, setProfileEmail] = useState('')
+	const [profilePhone, setProfilePhone] = useState('')
+	const [profileSaving, setProfileSaving] = useState(false)
+	const [profileError, setProfileError] = useState('')
+	const [profileSuccess, setProfileSuccess] = useState('')
+
+	useEffect(() => {
+		const stored = readStoredUser()
+		setProfileName(String(stored?.name || '').trim())
+		setProfileEmail(String(stored?.email || '').trim())
+		setProfilePhone(String(stored?.phone_number || '').trim())
+	}, [])
 
 	useEffect(() => {
 		if (typeof window === 'undefined') return
@@ -162,10 +197,12 @@ function SettingsPage() {
 
 	// Notification State
 	const [soundEnabled, setSoundEnabled] = useState(() => {
+		if (typeof localStorage === 'undefined') return true
 		const stored = localStorage.getItem('scalechat_sound_enabled')
 		return stored === null ? true : stored === 'true'
 	})
 	const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
+		if (typeof localStorage === 'undefined') return true
 		const stored = localStorage.getItem('scalechat_notifications_enabled')
 		return stored === null ? true : stored === 'true'
 	})
@@ -213,19 +250,60 @@ function SettingsPage() {
 			setIsThemeAnimating(false)
 		}
 	}
+
+	const saveProfile = async () => {
+		setProfileError('')
+		setProfileSuccess('')
+		setProfileSaving(true)
+		try {
+			const stored = readStoredUser()
+			const agentId = String(stored?.id || '').trim()
+			if (!agentId) throw new Error('Current user session not found')
+			const token = localStorage.getItem('scalechat_token')
+			const response = await fetch(`${API_BASE}/agents/${agentId}?appId=${encodeURIComponent(appId)}`, {
+				method: 'PATCH',
+				headers: {
+					Authorization: token ? `Bearer ${token}` : '',
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					name: profileName,
+					email: profileEmail,
+					phone_number: profilePhone || null,
+				}),
+			})
+			if (!response.ok) {
+				const payload = await response.json().catch(() => ({}))
+				throw new Error(payload?.error || 'Failed to save profile')
+			}
+			const result = await response.json().catch(() => ({}))
+			const updated = result?.data || {}
+			localStorage.setItem('scalechat_user', JSON.stringify({
+				...(stored || {}),
+				id: agentId,
+				name: updated.name || profileName,
+				email: updated.email || profileEmail,
+				phone_number: updated.phone_number || profilePhone || null,
+			}))
+			setProfileSuccess('Profile saved')
+			window.location.reload()
+		} catch (error: any) {
+			setProfileError(error?.message || 'Failed to save profile')
+		} finally {
+			setProfileSaving(false)
+		}
+	}
 	const [labelForm, setLabelForm] = useState({
 		title: '',
 		color: '#10B981',
 		description: '',
 	})
 
-	const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3005'
-
 	const fetchLabels = async () => {
 		setLabelsLoading(true)
 		try {
 			const token = localStorage.getItem('scalechat_token')
-			const res = await fetch(`${API_BASE}/api/labels`, {
+			const res = await fetch(`${API_BASE}/labels`, {
 				headers: { Authorization: `Bearer ${token}`, 'X-App-Id': appId },
 			})
 			const data = await res.json()
@@ -256,8 +334,8 @@ function SettingsPage() {
 			const token = localStorage.getItem('scalechat_token')
 			const method = editingLabel ? 'PUT' : 'POST'
 			const url = editingLabel
-				? `${API_BASE}/api/labels/${editingLabel.id}`
-				: `${API_BASE}/api/labels`
+				? `${API_BASE}/labels/${editingLabel.id}`
+				: `${API_BASE}/labels`
 
 			await fetch(url, {
 				method,
@@ -292,7 +370,7 @@ function SettingsPage() {
 		setIsDeleting(true)
 		try {
 			const token = localStorage.getItem('scalechat_token')
-			await fetch(`${API_BASE}/api/labels/${deletingLabel.id}`, {
+			await fetch(`${API_BASE}/labels/${deletingLabel.id}`, {
 				method: 'DELETE',
 				headers: { Authorization: `Bearer ${token}`, 'X-App-Id': appId },
 			})
@@ -316,7 +394,7 @@ function SettingsPage() {
 		<div className="flex-1 flex flex-col h-full bg-background overflow-hidden">
 			<PageHeader
 				title="Settings"
-				description="Update account preferences and manage integrations."
+				description="Update profile preferences and manage integrations."
 				icon={<SettingsIcon size={24} />}
 			/>
 
@@ -369,7 +447,8 @@ function SettingsPage() {
 											</label>
 											<Input
 												id="name"
-												defaultValue="Naufal Rasyid (AcidOpal)"
+												value={profileName}
+											onChange={(e) => setProfileName(e.target.value)}
 												className="h-10 rounded-lg border-gray-200"
 											/>
 										</div>
@@ -383,7 +462,8 @@ function SettingsPage() {
 											<Input
 												id="email"
 												type="email"
-												defaultValue="naufalrasyid86@gmail.com"
+												value={profileEmail}
+											onChange={(e) => setProfileEmail(e.target.value)}
 												className="h-10 rounded-lg border-gray-200"
 											/>
 										</div>
@@ -397,13 +477,25 @@ function SettingsPage() {
 											<Input
 												id="phone"
 												type="tel"
+												value={profilePhone}
+												onChange={(e) => setProfilePhone(e.target.value)}
 												placeholder="+62..."
 												className="h-10 rounded-lg border-gray-200"
 											/>
 										</div>
-										<Button className="mt-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold h-10 px-6">
+										{profileError && (
+											<div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+												{profileError}
+											</div>
+										)}
+										{profileSuccess && (
+											<div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+												{profileSuccess}
+											</div>
+										)}
+										<Button onClick={saveProfile} disabled={profileSaving} className="mt-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold h-10 px-6 disabled:opacity-60">
 											<Save size={18} className="mr-2" />
-											Save Changes
+											{profileSaving ? 'Saving...' : 'Save Changes'}
 										</Button>
 									</CardContent>
 								</Card>

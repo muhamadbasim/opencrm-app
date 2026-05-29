@@ -3,6 +3,7 @@ import {
 	WhatsAppChannelAssignmentConflictError,
 	WhatsAppService,
 } from './service'
+import { BaileysRuntimeService } from './baileys-runtime'
 import { BaileysServiceClient } from './baileys-service-client'
 import { WhatsAppRequestModel } from './model'
 import { appContext } from '../../plugins'
@@ -245,7 +246,21 @@ export const whatsapp = new Elysia({ tags: ['WhatsApp'] })
 			}
 
 			try {
-				const session = await BaileysServiceClient.startSession(params.id)
+				try {
+					const session = await BaileysServiceClient.startSession(params.id)
+					return { success: true, data: session }
+				} catch (externalError) {
+					console.warn(
+						'[WhatsApp] External Baileys service unavailable, using embedded runtime:',
+						externalError,
+					)
+				}
+
+				const session = await BaileysRuntimeService.ensureChannel(params.id, {
+					forceRestart: true,
+					resetAuth: true,
+					waitForReadyMs: 12_000,
+				})
 				return { success: true, data: session }
 			} catch (error: any) {
 				set.status = isBaileysStorageBootstrapError(error) ? 503 : 400
@@ -416,6 +431,12 @@ export const whatsapp = new Elysia({ tags: ['WhatsApp'] })
 	.delete(
 		'/:id',
 		async ({ params }) => {
+			// Tear down any embedded Baileys runtime first so a scheduled
+			// reconnect cannot resurrect the channel after deletion. No-op for
+			// channels without an active runtime entry.
+			await BaileysRuntimeService.stopChannel(params.id).catch((error) => {
+				console.warn('[WhatsApp] Failed to stop Baileys runtime on delete:', error)
+			})
 			await WhatsAppService.deleteChannel(params.id)
 			return { success: true }
 		},

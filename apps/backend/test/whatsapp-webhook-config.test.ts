@@ -1,18 +1,46 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import {
 	getBaileysProviderWebhookUrl,
 	getBaileysWhatsappWebhookCallbackUrl,
 } from '../src/modules/whatsapp/webhook-config'
 
 describe('whatsapp webhook config helpers', () => {
-	const originalProviderUrl = process.env.BAILEYS_PROVIDER_WEBHOOK_URL
-	const originalProviderPath = process.env.BAILEYS_PROVIDER_WEBHOOK_PATH
-	const originalApiPublicUrl = process.env.API_PUBLIC_URL
+	// Env vars that participate in URL resolution. Bun auto-loads
+	// apps/backend/.env, so the test must explicitly control every variable
+	// it depends on instead of assuming a clean environment.
+	const MANAGED_ENV_KEYS = [
+		'BAILEYS_PROVIDER_WEBHOOK_URL',
+		'BAILEYS_PROVIDER_WEBHOOK_PATH',
+		'BAILEYS_SERVICE_URL',
+		'API_PUBLIC_URL',
+		'BACKEND_URL',
+		'PUBLIC_API_BASE_URL',
+		'WHATSAPP_REDIRECT_URI',
+		'WHATSAPP_WEBHOOK_CALLBACK_URL',
+	] as const
+
+	const originalEnv = new Map<string, string | undefined>(
+		MANAGED_ENV_KEYS.map((key) => [key, process.env[key]]),
+	)
+
+	const clearManagedEnv = () => {
+		for (const key of MANAGED_ENV_KEYS) delete process.env[key]
+	}
+
+	beforeEach(() => {
+		// Start every case from a known-empty baseline so loaded .env values
+		// (e.g. a real BAILEYS_SERVICE_URL) cannot leak into expectations.
+		clearManagedEnv()
+	})
 
 	afterEach(() => {
-		process.env.BAILEYS_PROVIDER_WEBHOOK_URL = originalProviderUrl
-		process.env.BAILEYS_PROVIDER_WEBHOOK_PATH = originalProviderPath
-		process.env.API_PUBLIC_URL = originalApiPublicUrl
+		for (const [key, value] of originalEnv) {
+			if (value === undefined) {
+				delete process.env[key]
+			} else {
+				process.env[key] = value
+			}
+		}
 	})
 
 	it('prefers BAILEYS_PROVIDER_WEBHOOK_URL when provided', () => {
@@ -50,15 +78,31 @@ describe('whatsapp webhook config helpers', () => {
 		expect(result).toBe('https://local-api.scalebiz.chat/api/v1/webhooks/whatsapp/baileys')
 	})
 
-	it('defaults provider webhook URL to the internal backend send route', () => {
+	it('defaults provider webhook URL to the internal Baileys service send route', () => {
 		delete process.env.BAILEYS_PROVIDER_WEBHOOK_URL
 		delete process.env.BAILEYS_PROVIDER_WEBHOOK_PATH
+		delete process.env.BAILEYS_SERVICE_URL
 
 		const result = getBaileysProviderWebhookUrl(
 			new Request('http://localhost:3010/api/v1/whatsapp-channels/baileys'),
 			{},
 		)
 
-		expect(result).toBe('http://localhost:3010/api/v1/whatsapp-channels/baileys/send')
+		// With no explicit URL/path and no BAILEYS_SERVICE_URL, the resolver
+		// falls back to the Baileys service send URL default (127.0.0.1:3012).
+		expect(result).toBe('http://127.0.0.1:3012/api/v1/send')
+	})
+
+	it('uses BAILEYS_SERVICE_URL for the default provider webhook send route', () => {
+		delete process.env.BAILEYS_PROVIDER_WEBHOOK_URL
+		delete process.env.BAILEYS_PROVIDER_WEBHOOK_PATH
+		process.env.BAILEYS_SERVICE_URL = 'https://baileys.scalebiz.chat'
+
+		const result = getBaileysProviderWebhookUrl(
+			new Request('http://localhost:3010/api/v1/whatsapp-channels/baileys'),
+			{},
+		)
+
+		expect(result).toBe('https://baileys.scalebiz.chat/api/v1/send')
 	})
 })
