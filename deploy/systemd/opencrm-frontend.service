@@ -1,0 +1,22 @@
+[Unit]
+Description=OpenCRM Frontend (Nitro SSR)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/.openclaw/workspace/opencrm-app/apps/frontend
+EnvironmentFile=/home/ubuntu/.openclaw/workspace/opencrm-app/.env
+Environment=PORT=3005
+Environment=HOST=127.0.0.1
+Environment=NITRO_PORT=3005
+Environment=NITRO_HOST=127.0.0.1
+Environment=PATH=/home/ubuntu/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/node .output/server/index.mjs
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/opencrm-frontend.log
+StandardError=append:/var/log/opencrm-frontend.log
+
+[Install]
+WantedBy=multi-user.target

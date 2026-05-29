@@ -53,6 +53,9 @@ type RuntimeEntry = {
 	starting: boolean
 	pairingCodeRequested: boolean
 	restartTimer: ReturnType<typeof setTimeout> | null
+	reconnectAttempts: number
+	qrRetryCount: number
+	stopped: boolean
 }
 
 export type BaileysSessionSnapshot = {
@@ -69,6 +72,28 @@ export type BaileysSessionSnapshot = {
 }
 
 const runtimeEntries = new Map<string, RuntimeEntry>()
+const QR_RETRYABLE_DISCONNECT_CODES = new Set<number>([
+	DisconnectReason.connectionClosed,
+	DisconnectReason.connectionLost,
+	DisconnectReason.timedOut,
+	405,
+	428,
+])
+
+// Reconnect backoff: exponential, capped. Prevents a persistently failing
+// channel from hammering WhatsApp servers (and our DB) at a fixed interval.
+export const RECONNECT_BASE_DELAY_MS = 2_500
+export const RECONNECT_MAX_DELAY_MS = 60_000
+export const MAX_RECONNECT_ATTEMPTS = 10
+// Pre-QR retry (socket dropped before a QR/pairing handshake): fast retry but
+// capped so an unscanned channel does not spawn sockets forever.
+export const PRE_QR_RETRY_DELAY_MS = 500
+export const MAX_QR_RETRY_ATTEMPTS = 20
+
+export function computeReconnectDelay(attempt: number) {
+	const exponential = RECONNECT_BASE_DELAY_MS * 2 ** Math.max(0, attempt - 1)
+	return Math.min(exponential, RECONNECT_MAX_DELAY_MS)
+}
 
 const baileysLogger = {
 	level: 'silent',
@@ -108,6 +133,11 @@ function deserializeBufferJson<T>(value: unknown): T {
 	return JSON.parse(JSON.stringify(value ?? null), BufferJSON.reviver) as T
 }
 
+function isUsableAuthEnvelope(value: unknown): value is PersistedAuthEnvelope {
+	const record = asRecord(value)
+	return Boolean(record.creds && typeof record.creds === 'object')
+}
+
 function normalizeProviderChannelKey(metadata: unknown): string | null {
 	const record = asRecord(metadata)
 	return (
@@ -122,6 +152,16 @@ function normalizeDigits(value: string | null | undefined) {
 }
 
 function shouldUsePairingCode(channel: BaileysChannelRecord) {
+	const metadata = asRecord(channel.extended_metadata)
+	const configuredMode =
+		asString(metadata.baileys_link_mode) ||
+		asString(metadata.link_mode) ||
+		asString(process.env.BAILEYS_LINK_MODE)
+
+	return configuredMode?.toLowerCase() === 'pairing_code'
+}
+
+function useMobilePairingMode(channel: BaileysChannelRecord) {
 	const metadata = asRecord(channel.extended_metadata)
 	const configuredMode =
 		asString(metadata.baileys_link_mode) ||
@@ -289,6 +329,7 @@ function createEntry(params: {
 	if (existing) {
 		existing.providerChannelKey = params.providerChannelKey
 		existing.phoneNumber = params.phoneNumber
+		existing.stopped = false
 		return existing
 	}
 
@@ -300,6 +341,9 @@ function createEntry(params: {
 		starting: false,
 		pairingCodeRequested: false,
 		restartTimer: null,
+		reconnectAttempts: 0,
+		qrRetryCount: 0,
+		stopped: false,
 	}
 	runtimeEntries.set(params.channelId, entry)
 	return entry
@@ -359,14 +403,12 @@ async function upsertSessionRecord(channel: BaileysChannelRecord) {
 
 function buildAuthState(sessionRow: Awaited<ReturnType<typeof upsertSessionRecord>>) {
 	const restored = deserializeBufferJson<PersistedAuthEnvelope>(sessionRow.auth_state)
+	const baseEnvelope = isUsableAuthEnvelope(restored) ? restored : null
 	const persisted: PersistedAuthEnvelope = {
-		creds:
-			restored?.creds && typeof restored.creds === 'object'
-				? restored.creds
-				: initAuthCreds(),
+		creds: baseEnvelope?.creds || initAuthCreds(),
 		keys:
-			restored?.keys && typeof restored.keys === 'object'
-				? restored.keys
+			baseEnvelope?.keys && typeof baseEnvelope.keys === 'object'
+				? baseEnvelope.keys
 				: {},
 	}
 
@@ -462,7 +504,7 @@ export abstract class BaileysRuntimeService {
 
 	static async ensureChannel(
 		channelId: string,
-		options?: { forceRestart?: boolean; waitForReadyMs?: number },
+		options?: { forceRestart?: boolean; resetAuth?: boolean; waitForReadyMs?: number },
 	) {
 		await ensureBaileysSessionStorage()
 
@@ -485,6 +527,23 @@ export abstract class BaileysRuntimeService {
 			entry.socket?.end(undefined)
 			entry.socket = null
 			entry.pairingCodeRequested = false
+			// Manual (re)start grants a fresh retry budget.
+			entry.reconnectAttempts = 0
+			entry.qrRetryCount = 0
+			entry.stopped = false
+			if (options.resetAuth) {
+				await prisma.baileys_sessions.updateMany({
+					where: { channel_id: channel.id },
+					data: {
+						status: 'pending',
+						auth_state: Prisma.DbNull,
+						pairing_code: null,
+						qr_code: null,
+						last_error: null,
+						updated_at: new Date(),
+					},
+				})
+			}
 		}
 
 		if (!entry.socket && !entry.starting) {
@@ -699,6 +758,7 @@ export abstract class BaileysRuntimeService {
 			browser: Browsers.macOS('Google Chrome'),
 			printQRInTerminal: false,
 			markOnlineOnConnect: false,
+			mobile: useMobilePairingMode(channel),
 			getMessage: async () => undefined,
 		})
 
@@ -748,6 +808,7 @@ export abstract class BaileysRuntimeService {
 		if (!sessionRow?.id) return
 
 		if (update.qr) {
+			entry.qrRetryCount = 0
 			await prisma.baileys_sessions.update({
 				where: { id: sessionRow.id },
 				data: {
@@ -816,6 +877,8 @@ export abstract class BaileysRuntimeService {
 
 		if (update.connection === 'open') {
 			entry.pairingCodeRequested = false
+			entry.reconnectAttempts = 0
+			entry.qrRetryCount = 0
 			await prisma.baileys_sessions.update({
 				where: { id: sessionRow.id },
 				data: {
@@ -885,20 +948,81 @@ export abstract class BaileysRuntimeService {
 		const shouldReconnect =
 			disconnectCode !== DisconnectReason.connectionReplaced &&
 			disconnectCode !== DisconnectReason.forbidden
+		const retryableBeforeQr =
+			!socket.authState.creds.registered &&
+			disconnectCode !== null &&
+			QR_RETRYABLE_DISCONNECT_CODES.has(disconnectCode)
 
+		// Decide the next action with bounded retries + exponential backoff.
+		if (retryableBeforeQr) {
+			entry.qrRetryCount += 1
+			if (entry.qrRetryCount > MAX_QR_RETRY_ATTEMPTS) {
+				await prisma.baileys_sessions.update({
+					where: { id: sessionRow.id },
+					data: {
+						status: 'disconnected',
+						last_error:
+							'Gave up before QR scan after ' +
+							`${MAX_QR_RETRY_ATTEMPTS} attempts. Restart the session to try again.`,
+						last_seen_at: new Date(),
+						updated_at: new Date(),
+					},
+				})
+				return
+			}
+			await prisma.baileys_sessions.update({
+				where: { id: sessionRow.id },
+				data: {
+					status: 'connecting',
+					last_error: null,
+					last_seen_at: new Date(),
+					updated_at: new Date(),
+				},
+			})
+			BaileysRuntimeService.scheduleRestart(entry.channelId, PRE_QR_RETRY_DELAY_MS)
+			return
+		}
+
+		if (!shouldReconnect) {
+			await prisma.baileys_sessions.update({
+				where: { id: sessionRow.id },
+				data: {
+					status: 'disconnected',
+					last_error: formattedDisconnectMessage,
+					last_seen_at: new Date(),
+					updated_at: new Date(),
+				},
+			})
+			return
+		}
+
+		entry.reconnectAttempts += 1
+		if (entry.reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+			await prisma.baileys_sessions.update({
+				where: { id: sessionRow.id },
+				data: {
+					status: 'disconnected',
+					last_error:
+						`${formattedDisconnectMessage} — stopped after ` +
+						`${MAX_RECONNECT_ATTEMPTS} reconnect attempts. Restart the session to retry.`,
+					last_seen_at: new Date(),
+					updated_at: new Date(),
+				},
+			})
+			return
+		}
+
+		const reconnectDelay = computeReconnectDelay(entry.reconnectAttempts)
 		await prisma.baileys_sessions.update({
 			where: { id: sessionRow.id },
 			data: {
-				status: shouldReconnect ? 'reconnecting' : 'disconnected',
+				status: 'reconnecting',
 				last_error: formattedDisconnectMessage,
 				last_seen_at: new Date(),
 				updated_at: new Date(),
 			},
 		})
-
-		if (shouldReconnect) {
-			BaileysRuntimeService.scheduleRestart(entry.channelId, 2_500)
-		}
+		BaileysRuntimeService.scheduleRestart(entry.channelId, reconnectDelay)
 	}
 
 	private static async handleMessagesUpsert(
@@ -1150,9 +1274,11 @@ export abstract class BaileysRuntimeService {
 	private static scheduleRestart(channelId: string, delayMs: number) {
 		const entry = runtimeEntries.get(channelId)
 		if (!entry) return
+		if (entry.stopped) return
 		BaileysRuntimeService.clearRestartTimer(entry)
 		entry.restartTimer = setTimeout(() => {
 			entry.restartTimer = null
+			if (entry.stopped) return
 			void BaileysRuntimeService.ensureChannel(channelId, { forceRestart: true }).catch((error) => {
 				console.error('[BaileysRuntime] Failed to restart channel', error)
 			})
@@ -1163,5 +1289,26 @@ export abstract class BaileysRuntimeService {
 		if (!entry.restartTimer) return
 		clearTimeout(entry.restartTimer)
 		entry.restartTimer = null
+	}
+
+	/**
+	 * Tear down the in-memory runtime for a channel: cancel any pending
+	 * restart, close the live socket, and drop the entry. Call this when a
+	 * channel is deleted/deactivated so a scheduled reconnect cannot resurrect
+	 * a removed channel and leak a socket. Idempotent.
+	 */
+	static async stopChannel(channelId: string) {
+		const entry = runtimeEntries.get(channelId)
+		if (!entry) return
+		entry.stopped = true
+		BaileysRuntimeService.clearRestartTimer(entry)
+		try {
+			entry.socket?.end(undefined)
+		} catch (error) {
+			console.warn('[BaileysRuntime] Error closing socket on stop', error)
+		}
+		entry.socket = null
+		entry.pairingCodeRequested = false
+		runtimeEntries.delete(channelId)
 	}
 }

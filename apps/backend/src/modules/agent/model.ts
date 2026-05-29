@@ -35,7 +35,7 @@ export const AgentRequestModel = {
 		name: t.Optional(t.String()),
 		email: t.Optional(t.String()),
 		password: t.Optional(t.String()),
-		phone_number: t.Optional(t.String()),
+		phone_number: t.Optional(t.Nullable(t.String())),
 		role: t.Optional(t.String()),
 		status: t.Optional(t.String()),
 		is_available: t.Optional(t.Boolean()),

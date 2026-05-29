@@ -1,0 +1,19 @@
+[Unit]
+Description=OpenCRM Backend Worker (BullMQ)
+After=network.target postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/.openclaw/workspace/opencrm-app/apps/backend
+EnvironmentFile=/home/ubuntu/.openclaw/workspace/opencrm-app/.env
+Environment=APP_MODE=worker
+Environment=PATH=/home/ubuntu/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/env -u APP_MODE APP_MODE=worker /home/ubuntu/.bun/bin/bun --no-env-file run dist/index.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/opencrm-worker.log
+StandardError=append:/var/log/opencrm-worker.log
+
+[Install]
+WantedBy=multi-user.target
