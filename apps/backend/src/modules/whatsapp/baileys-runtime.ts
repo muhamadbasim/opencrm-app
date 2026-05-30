@@ -4,6 +4,7 @@ import makeWASocket, {
 	Browsers,
 	DisconnectReason,
 	downloadMediaMessage,
+	fetchLatestBaileysVersion,
 	getContentType,
 	initAuthCreds,
 	isJidGroup,
@@ -95,6 +96,41 @@ export function computeReconnectDelay(attempt: number) {
 	return Math.min(exponential, RECONNECT_MAX_DELAY_MS)
 }
 
+// WhatsApp rejects the Web handshake with "Connection Failure (code 405)" when
+// the client advertises a stale protocol version — and in that state no QR is
+// ever emitted. Baileys ships a bundled version that goes stale over time, so
+// we fetch the current version once per process (cached) and fall back to the
+// bundled default if the network fetch fails. Refreshed when a connect attempt
+// hits a version-rejection so a long-running process can self-heal.
+let cachedWaVersion: [number, number, number] | null = null
+let cachedWaVersionAt = 0
+const WA_VERSION_TTL_MS = 6 * 60 * 60 * 1000 // 6h
+
+async function resolveBaileysVersion(forceRefresh = false) {
+	const now = Date.now()
+	if (
+		!forceRefresh &&
+		cachedWaVersion &&
+		now - cachedWaVersionAt < WA_VERSION_TTL_MS
+	) {
+		return cachedWaVersion
+	}
+	try {
+		const { version, isLatest } = await fetchLatestBaileysVersion()
+		cachedWaVersion = version as [number, number, number]
+		cachedWaVersionAt = now
+		console.log('[BaileysRuntime] Using WA web version', version, { isLatest })
+		return cachedWaVersion
+	} catch (error) {
+		console.warn(
+			'[BaileysRuntime] Failed to fetch latest WA version, using Baileys bundled default',
+			error,
+		)
+		// Returning null lets makeWASocket fall back to its bundled version.
+		return cachedWaVersion
+	}
+}
+
 const baileysLogger = {
 	level: 'silent',
 	child() {
@@ -152,16 +188,6 @@ function normalizeDigits(value: string | null | undefined) {
 }
 
 function shouldUsePairingCode(channel: BaileysChannelRecord) {
-	const metadata = asRecord(channel.extended_metadata)
-	const configuredMode =
-		asString(metadata.baileys_link_mode) ||
-		asString(metadata.link_mode) ||
-		asString(process.env.BAILEYS_LINK_MODE)
-
-	return configuredMode?.toLowerCase() === 'pairing_code'
-}
-
-function useMobilePairingMode(channel: BaileysChannelRecord) {
 	const metadata = asRecord(channel.extended_metadata)
 	const configuredMode =
 		asString(metadata.baileys_link_mode) ||
@@ -749,7 +775,10 @@ export abstract class BaileysRuntimeService {
 			},
 		})
 
+		const waVersion = await resolveBaileysVersion()
+
 		const socket = makeWASocket({
+			...(waVersion ? { version: waVersion } : {}),
 			auth: {
 				creds: auth.state.creds,
 				keys: makeCacheableSignalKeyStore(auth.state.keys, baileysLogger as any),
@@ -758,7 +787,6 @@ export abstract class BaileysRuntimeService {
 			browser: Browsers.macOS('Google Chrome'),
 			printQRInTerminal: false,
 			markOnlineOnConnect: false,
-			mobile: useMobilePairingMode(channel),
 			getMessage: async () => undefined,
 		})
 
@@ -969,6 +997,12 @@ export abstract class BaileysRuntimeService {
 					},
 				})
 				return
+			}
+			// A 405 before QR is the classic "stale WA protocol version"
+			// rejection — refresh the cached version so the retry handshakes
+			// with a current one and can finally emit a QR.
+			if (disconnectCode === 405) {
+				await resolveBaileysVersion(true).catch(() => undefined)
 			}
 			await prisma.baileys_sessions.update({
 				where: { id: sessionRow.id },
