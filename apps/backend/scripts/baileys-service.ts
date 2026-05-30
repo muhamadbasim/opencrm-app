@@ -6,6 +6,7 @@ import makeWASocket, {
 	BufferJSON,
 	Browsers,
 	DisconnectReason,
+	fetchLatestBaileysVersion,
 	initAuthCreds,
 	makeCacheableSignalKeyStore,
 	type AuthenticationState,
@@ -56,6 +57,38 @@ const logger = {
 } as const
 
 const sleep = (ms: number) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms))
+
+// Fetch the current WA web version (cached) so the handshake is not rejected
+// with "Connection Failure (code 405)" by a stale bundled version — which also
+// prevents any QR from being emitted. Falls back to Baileys' bundled default
+// when the fetch fails.
+let cachedWaVersion: [number, number, number] | null = null
+let cachedWaVersionAt = 0
+const WA_VERSION_TTL_MS = 6 * 60 * 60 * 1000
+
+async function resolveWaVersion(forceRefresh = false) {
+	const now = Date.now()
+	if (
+		!forceRefresh &&
+		cachedWaVersion &&
+		now - cachedWaVersionAt < WA_VERSION_TTL_MS
+	) {
+		return cachedWaVersion
+	}
+	try {
+		const { version, isLatest } = await fetchLatestBaileysVersion()
+		cachedWaVersion = version as [number, number, number]
+		cachedWaVersionAt = now
+		console.log('[BaileysService] Using WA web version', version, { isLatest })
+		return cachedWaVersion
+	} catch (error) {
+		console.warn(
+			'[BaileysService] Failed to fetch latest WA version, using bundled default',
+			error,
+		)
+		return cachedWaVersion
+	}
+}
 
 function json(data: unknown, status = 200) {
 	return new Response(JSON.stringify(data), {
@@ -274,7 +307,9 @@ async function startSession(channelId: string, options?: { resetAuth?: boolean }
 	})
 
 	entry.starting = true
+	const waVersion = await resolveWaVersion()
 	const socket = makeWASocket({
+		...(waVersion ? { version: waVersion } : {}),
 		auth: {
 			creds: auth.state.creds,
 			keys: makeCacheableSignalKeyStore(auth.state.keys, logger as any),
@@ -352,6 +387,9 @@ async function startSession(channelId: string, options?: { resetAuth?: boolean }
 				})
 				if (retryableBeforeQr) {
 					entry!.qrRetryCount += 1
+					if (code === 405) {
+						await resolveWaVersion(true).catch(() => undefined)
+					}
 					setTimeout(() => {
 						void startSession(channelId).catch((error) => {
 							console.error('[BaileysService] retry failed', error)

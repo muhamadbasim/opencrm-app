@@ -246,9 +246,28 @@ export const whatsapp = new Elysia({ tags: ['WhatsApp'] })
 			}
 
 			try {
+				// Prefer the external Baileys microservice, but only trust a
+				// result that is actually progressing toward a link. A 200 with
+				// a disconnected/errored session (e.g. "Connection Failure code
+				// 405" and no QR) must fall through to the embedded runtime
+				// instead of being surfaced as a dead session.
+				const healthyStatuses = new Set([
+					'connected',
+					'qr_ready',
+					'pairing_code_ready',
+					'connecting',
+					'restarting',
+				])
 				try {
 					const session = await BaileysServiceClient.startSession(params.id)
-					return { success: true, data: session }
+					if (session && healthyStatuses.has(String(session.status))) {
+						return { success: true, data: session }
+					}
+					console.warn(
+						'[WhatsApp] External Baileys service returned non-progressing session, using embedded runtime:',
+						session?.status,
+						session?.lastError,
+					)
 				} catch (externalError) {
 					console.warn(
 						'[WhatsApp] External Baileys service unavailable, using embedded runtime:',
