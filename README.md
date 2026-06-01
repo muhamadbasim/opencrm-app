@@ -356,4 +356,4 @@ Backend tests live in `apps/backend/test/` and run with Bun's test runner.
 
 ## License
 
-Proprietary — © the repository owner. Contact the repo owner for usage and licensing terms.
+Released under the [MIT License](./LICENSE). © 2026 Muhamad Basim.
